@@ -1,0 +1,32 @@
+openapi: 3.0.0
+info:
+  title: Incomplete API
+  version: 1.0.0
+
+paths:
+  /users:
+    get:
+      operationId: getUsers
+      summary: Get all users
+      responses:
+        '200':
+          description: Users list (missing schema)
+    post:
+      operationId: createUser
+      summary: Create user
+      # Missing request body and responses
+
+  /products:
+    get:
+      operationId: getProducts
+      # Missing responses entirely
+
+  /orders:
+    post:
+      operationId: createOrder
+      responses:
+        '400':
+          description: Bad request
+        '500':
+          description: Server error
+        # No 2xx response!
