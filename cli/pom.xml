@@ -25,6 +25,13 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- Report module dependency -->
+        <dependency>
+            <groupId>com.apisecurity</groupId>
+            <artifactId>report</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- CLI framework -->
         <dependency>
             <groupId>info.picocli</groupId>
