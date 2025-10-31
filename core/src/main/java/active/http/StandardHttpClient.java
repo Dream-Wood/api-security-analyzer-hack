@@ -6,7 +6,9 @@ import active.model.TestResponse;
 import javax.net.ssl.*;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.net.HttpURLConnection;
+import java.net.ProtocolException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.cert.X509Certificate;
@@ -44,14 +46,21 @@ public final class StandardHttpClient implements HttpClient {
             // Configure connection
             configureConnection(connection, request);
 
-            // Set request method
-            connection.setRequestMethod(request.getMethod());
+            // Set request method (with PATCH support via fallback)
+            String originalMethod = request.getMethod();
+            String actualMethod = setRequestMethod(connection, originalMethod);
 
             // Add default headers from config
             config.getDefaultHeaders().forEach(connection::setRequestProperty);
 
             // Add headers from request (override defaults)
             request.getHeaders().forEach(connection::setRequestProperty);
+
+            // If method was changed to POST for PATCH support, add override header
+            if (!originalMethod.equals("POST") && actualMethod.equals(originalMethod) &&
+                !originalMethod.equals(connection.getRequestMethod())) {
+                connection.setRequestProperty("X-HTTP-Method-Override", originalMethod);
+            }
 
             // Send request body if present
             if (request.getBody() != null && !request.getBody().isEmpty()) {
@@ -112,6 +121,44 @@ public final class StandardHttpClient implements HttpClient {
     @Override
     public void close() {
         // HttpURLConnection doesn't maintain persistent connections that need cleanup
+    }
+
+    /**
+     * Set request method with support for PATCH and other non-standard methods.
+     *
+     * <p>HttpURLConnection doesn't support PATCH by default. For PATCH requests,
+     * we use POST method with X-HTTP-Method-Override header as a fallback.
+     * This is a standard approach supported by many REST APIs.
+     *
+     * @return the actual method that was set (may differ from requested for PATCH)
+     */
+    private String setRequestMethod(HttpURLConnection connection, String method) throws IOException {
+        try {
+            connection.setRequestMethod(method);
+            return method;
+        } catch (ProtocolException e) {
+            // PATCH is not supported by HttpURLConnection
+            // Try reflection first (works in Java 8 and with --add-opens flag)
+            try {
+                Field methodField;
+                try {
+                    methodField = HttpURLConnection.class.getDeclaredField("method");
+                } catch (NoSuchFieldException ex) {
+                    Class<?> parentClass = connection.getClass().getSuperclass();
+                    methodField = parentClass.getDeclaredField("method");
+                }
+                methodField.setAccessible(true);
+                methodField.set(connection, method);
+                return method;
+            } catch (Exception reflectionEx) {
+                // Reflection failed (Java 9+ module system restriction)
+                // Fallback: Use POST with X-HTTP-Method-Override header
+                // This is a standard way to tunnel non-standard HTTP methods
+                logger.fine("Cannot set " + method + " method directly. Using POST with X-HTTP-Method-Override header.");
+                connection.setRequestMethod("POST");
+                return method; // Return original method, we'll add the override header
+            }
+        }
     }
 
     private void configureConnection(HttpURLConnection connection, TestRequest request) {
