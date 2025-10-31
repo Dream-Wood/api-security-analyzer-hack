@@ -78,13 +78,16 @@ public final class JsonContractValidator {
                 metadata.put("violationType", msg.getType());
                 metadata.put("arguments", msg.getArguments());
 
+                // Enhance details with violation type information for better test detection
+                String details = buildDetailedMessage(msg);
+
                 findings.add(new ValidationFinding(
                     severity,
                     ValidationFinding.FindingCategory.CONTRACT,
                     "JSON_SCHEMA_VIOLATION",
                     path,
                     null,
-                    msg.getMessage(),
+                    details,
                     getRecommendation(msg),
                     metadata
                 ));
@@ -106,21 +109,42 @@ public final class JsonContractValidator {
     }
 
     /**
+     * Builds a detailed message with violation type information.
+     */
+    private String buildDetailedMessage(ValidationMessage msg) {
+        String message = msg.getMessage();
+        String type = msg.getType() != null ? msg.getType() : "";
+
+        // Add type information to help identify violation category
+        if (type.toLowerCase().contains("type")) {
+            return "[Type Violation] " + message;
+        } else if (type.toLowerCase().contains("required") ||
+                   message.toLowerCase().contains("required") ||
+                   message.toLowerCase().contains("is missing")) {
+            return "[Required Field Violation] " + message;
+        } else if (type.toLowerCase().contains("additionalproperties")) {
+            return "[Additional Properties Violation] " + message;
+        } else if (type.toLowerCase().contains("enum")) {
+            return "[Enum Violation] " + message;
+        } else {
+            return message;
+        }
+    }
+
+    /**
      * Classifies a validation message into a severity level.
      */
     private Severity classifyViolation(ValidationMessage msg) {
         String message = msg.getMessage().toLowerCase();
         String type = msg.getType() != null ? msg.getType().toLowerCase() : "";
 
-        if (type.contains("type") && message.contains("is not of type")) {
+        // Type violations are HIGH severity
+        if (type.contains("type")) {
             return Severity.HIGH;
         }
 
-        if (message.contains("required") || message.contains("is missing")) {
-            return Severity.HIGH;
-        }
-
-        if (type.contains("required")) {
+        // Required field violations are HIGH severity
+        if (message.contains("required") || message.contains("is missing") || type.contains("required")) {
             return Severity.HIGH;
         }
 

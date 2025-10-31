@@ -151,7 +151,8 @@ public final class SecurityValidator implements ContractValidator {
         }
 
         // Check for missing authorization on resource access
-        if (op.getPath().matches(".*\\{.*id\\}.*") && !op.requiresAuthentication()) {
+        // Use case-insensitive regex to match parameter names containing "id"
+        if (op.getPath().toLowerCase().matches(".*\\{.*id.*\\}.*") && !op.requiresAuthentication()) {
             findings.add(new ValidationFinding(
                 Severity.MEDIUM,
                 ValidationFinding.FindingCategory.SECURITY,
