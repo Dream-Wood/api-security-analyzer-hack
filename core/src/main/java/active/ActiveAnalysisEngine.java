@@ -41,6 +41,10 @@ public final class ActiveAnalysisEngine {
         this.httpClient = HttpClientFactory.createClient(httpConfig);
         this.scannerRegistry = new ScannerRegistry();
 
+        // Auto-discover and register scanners using ServiceLoader
+        int scannersRegistered = ScannerAutoDiscovery.discoverAndRegister(scannerRegistry);
+        logger.info("Auto-registered " + scannersRegistered + " scanner(s) via ServiceLoader");
+
         // Create thread pool for parallel scanning
         this.executorService = Executors.newFixedThreadPool(
             analysisConfig.getMaxParallelScans()

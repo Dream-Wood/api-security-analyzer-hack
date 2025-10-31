@@ -4,7 +4,6 @@ import active.ActiveAnalysisEngine;
 import active.http.HttpClient;
 import active.model.ApiEndpoint;
 import active.scanner.ScanContext;
-import active.scanner.bola.BolaScanner;
 import report.AnalysisReport;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.servers.Server;
@@ -175,10 +174,7 @@ public final class UnifiedAnalyzer {
                     .build();
 
             engine = new ActiveAnalysisEngine(analysisConfig);
-
-            // Register scanners
-            engine.registerScanner(new BolaScanner());
-            // Add more scanners here as they become available
+            // Scanners are auto-registered via ServiceLoader (see META-INF/services)
 
             // Extract endpoints from OpenAPI spec
             List<ApiEndpoint> endpoints = extractEndpoints(openAPI);
