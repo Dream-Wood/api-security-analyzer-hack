@@ -1,5 +1,6 @@
 package active.scanner.bola;
 
+import active.auth.AuthCredentials;
 import active.http.HttpClient;
 import active.model.ApiEndpoint;
 import active.model.TestRequest;
@@ -287,6 +288,7 @@ public final class BolaScanner implements VulnerabilityScanner {
 
     /**
      * Test for horizontal privilege escalation (accessing other users' resources).
+     * Uses multiple authenticated users to test if User A can access User B's resources.
      */
     private BolaTestResult testHorizontalPrivilegeEscalation(
         ApiEndpoint endpoint,
@@ -295,14 +297,124 @@ public final class BolaScanner implements VulnerabilityScanner {
     ) {
         logger.fine("Testing horizontal privilege escalation for: " + endpoint);
 
-        // This test would ideally use multiple user credentials
-        // For now, we'll test if the endpoint validates object ownership
-
-        Map<String, String> headers = new HashMap<>(context.getAuthHeaders());
-
-        // Test accessing resources that likely belong to other users
-        List<String> otherUserIds = List.of("999", "1000", "9999");
         int testsExecuted = 0;
+
+        // Try to retrieve multiple test users from auto-auth
+        Optional<Object> testUsersData = context.getSharedData("testUsers");
+        Optional<Object> primaryCredsData = context.getSharedData("primaryCredentials");
+
+        if (testUsersData.isPresent() && testUsersData.get() instanceof List) {
+            @SuppressWarnings("unchecked")
+            List<AuthCredentials> testUsers = (List<AuthCredentials>) testUsersData.get();
+
+            // Add primary credentials if available
+            List<AuthCredentials> allUsers = new ArrayList<>(testUsers);
+            if (primaryCredsData.isPresent() && primaryCredsData.get() instanceof AuthCredentials) {
+                allUsers.add(0, (AuthCredentials) primaryCredsData.get());
+            }
+
+            // Need at least 2 users for horizontal privilege escalation test
+            if (allUsers.size() >= 2) {
+                logger.info("Testing horizontal privilege escalation with " + allUsers.size() + " authenticated users");
+
+                // Test: User A tries to access User B's resource
+                AuthCredentials userA = allUsers.get(0);
+                AuthCredentials userB = allUsers.get(1);
+
+                // First, let User B access their own resource to establish baseline
+                Map<String, String> userBHeaders = new HashMap<>(context.getAuthHeaders());
+                if (userB.hasToken()) {
+                    userBHeaders.put("Authorization", userB.getAuthorizationHeader());
+                }
+
+                // Try common user ID values and username-based IDs
+                List<String> testIds = new ArrayList<>();
+                testIds.add(userB.getUsername()); // Try username as ID
+                testIds.addAll(List.of("1", "2", "3", "10", "100")); // Try numeric IDs
+
+                String userBOwnResourceUrl = null;
+                TestResponse userBOwnResponse = null;
+
+                // Find a resource that User B can successfully access
+                for (String testId : testIds) {
+                    String url = buildUrlWithId(endpoint, testId, context);
+                    TestRequest userBRequest = TestRequest.builder()
+                        .url(url)
+                        .method(endpoint.getMethod())
+                        .headers(userBHeaders)
+                        .build();
+
+                    TestResponse response = httpClient.execute(userBRequest);
+                    testsExecuted++;
+
+                    if (response.getStatusCode() == 200 && response.getBody() != null && !response.getBody().isEmpty()) {
+                        userBOwnResourceUrl = url;
+                        userBOwnResponse = response;
+                        logger.fine("User B successfully accessed resource: " + testId);
+                        break;
+                    }
+                }
+
+                // If we found a resource that User B can access, try to access it as User A
+                if (userBOwnResourceUrl != null) {
+                    Map<String, String> userAHeaders = new HashMap<>(context.getAuthHeaders());
+                    if (userA.hasToken()) {
+                        userAHeaders.put("Authorization", userA.getAuthorizationHeader());
+                    }
+
+                    TestRequest userARequest = TestRequest.builder()
+                        .url(userBOwnResourceUrl)
+                        .method(endpoint.getMethod())
+                        .headers(userAHeaders)
+                        .build();
+
+                    TestResponse userAResponse = httpClient.execute(userARequest);
+                    testsExecuted++;
+
+                    // If User A can access User B's resource with 200 OK, it's a BOLA vulnerability
+                    if (userAResponse.getStatusCode() == 200 && userAResponse.getBody() != null) {
+                        VulnerabilityReport vulnerability = VulnerabilityReport.builder()
+                            .type(VulnerabilityReport.VulnerabilityType.BOLA)
+                            .severity(Severity.CRITICAL)
+                            .endpoint(endpoint)
+                            .title("Horizontal Privilege Escalation - BOLA with Multiple Users")
+                            .description(
+                                "The endpoint allows authenticated users to access resources belonging to other users. " +
+                                "User A ('" + userA.getUsername() + "') successfully accessed a resource belonging to " +
+                                "User B ('" + userB.getUsername() + "'). This demonstrates a Broken Object Level Authorization " +
+                                "vulnerability where the application does not properly verify resource ownership."
+                            )
+                            .exploitRequest(userARequest)
+                            .exploitResponse(userAResponse)
+                            .addEvidence("userA", userA.getUsername())
+                            .addEvidence("userB", userB.getUsername())
+                            .addEvidence("resourceUrl", userBOwnResourceUrl)
+                            .addEvidence("userAStatusCode", userAResponse.getStatusCode())
+                            .addEvidence("userBStatusCode", userBOwnResponse.getStatusCode())
+                            .addRecommendation("Implement strict object-level authorization checks")
+                            .addRecommendation("Verify that the authenticated user owns the requested resource")
+                            .addRecommendation("Use attribute-based access control (ABAC) to enforce resource ownership")
+                            .addRecommendation("Never rely solely on authentication - always check authorization")
+                            .reproductionSteps(
+                                "1. Authenticate as User B ('" + userB.getUsername() + "')\n" +
+                                "2. Access " + userBOwnResourceUrl + " - observe successful 200 OK response\n" +
+                                "3. Authenticate as User A ('" + userA.getUsername() + "')\n" +
+                                "4. Access the same URL - observe successful 200 OK response\n" +
+                                "5. User A should NOT have access to User B's resource"
+                            )
+                            .build();
+
+                        return new BolaTestResult(Optional.of(vulnerability), testsExecuted);
+                    }
+                }
+            } else {
+                logger.fine("Not enough test users for horizontal privilege escalation test (need 2, have " + allUsers.size() + ")");
+            }
+        }
+
+        // Fallback: Test with arbitrary IDs if no test users available
+        Map<String, String> headers = new HashMap<>(context.getAuthHeaders());
+        List<String> otherUserIds = List.of("999", "1000", "9999");
 
         for (String otherId : otherUserIds) {
             String url = buildUrlWithId(endpoint, otherId, context);
@@ -320,7 +432,7 @@ public final class BolaScanner implements VulnerabilityScanner {
             if (response.getStatusCode() == 200 && response.getBody() != null) {
                 VulnerabilityReport vulnerability = VulnerabilityReport.builder()
                     .type(VulnerabilityReport.VulnerabilityType.BOLA)
-                    .severity(Severity.CRITICAL)
+                    .severity(Severity.HIGH)
                     .endpoint(endpoint)
                     .title("Horizontal Privilege Escalation - BOLA")
                     .description(
@@ -335,8 +447,8 @@ public final class BolaScanner implements VulnerabilityScanner {
                     .addRecommendation("Verify resource ownership before granting access")
                     .addRecommendation("Use attribute-based access control (ABAC) or role-based access control (RBAC)")
                     .reproductionSteps(
-                        "1. Authenticate as User A\n" +
-                        "2. Access " + url + " (resource belonging to User B)\n" +
+                        "1. Authenticate as a user\n" +
+                        "2. Access " + url + " (resource belonging to another user)\n" +
                         "3. Observe successful access to another user's resource"
                     )
                     .build();
@@ -352,28 +464,51 @@ public final class BolaScanner implements VulnerabilityScanner {
         // Check for path parameters that look like IDs
         for (ParameterSpec param : endpoint.getPathParameters()) {
             String name = param.getName().toLowerCase();
+            String type = param.getType() != null ? param.getType().toLowerCase() : "";
+
+            // More flexible ID detection patterns
             if (name.equals("id") ||
                 name.endsWith("id") ||
-                name.equals("userid") ||
-                name.equals("objectid")) {
+                name.endsWith("_id") ||
+                name.contains("id") ||           // user_id, doc_id, account_id, etc
+                name.contains("number") ||       // account_number, order_number
+                name.contains("key") ||          // api_key, user_key
+                name.contains("code") ||         // order_code, ref_code
+                name.contains("token") ||        // reset_token, access_token
+                name.contains("uuid") ||         // uuid, user_uuid
+                type.equals("integer") ||        // integer types are often IDs
+                type.equals("number")) {         // numeric IDs
                 return true;
             }
         }
 
-        // Also check if the path contains {id} pattern
+        // Also check if path has any parameter that could be an identifier
         String path = endpoint.getPath().toLowerCase();
-        return path.contains("{id}") ||
-               path.contains("/{id}") ||
-               path.matches(".*\\{\\w*id\\}.*");
+        if (path.contains("{") && !endpoint.getPathParameters().isEmpty()) {
+            // Any path parameter could potentially be an ID in RESTful APIs
+            return true;
+        }
+
+        return false;
     }
 
     private String buildUrlWithId(ApiEndpoint endpoint, String idValue, ScanContext context) {
         String path = endpoint.getPath();
 
         // Replace path parameter placeholders with actual ID value
-        // Support both {id} and {userId} style parameters
+        // Support various parameter naming patterns
         path = path.replaceAll("\\{id\\}", idValue);
-        path = path.replaceAll("\\{\\w*[iI][dD]\\}", idValue);
+        path = path.replaceAll("\\{\\w*[iI][dD]\\}", idValue);  // {user_id}, {userId}, {docId}
+        path = path.replaceAll("\\{\\w*[nN]umber\\}", idValue); // {account_number}
+        path = path.replaceAll("\\{\\w*[kK]ey\\}", idValue);    // {api_key}
+        path = path.replaceAll("\\{\\w*[cC]ode\\}", idValue);   // {order_code}
+        path = path.replaceAll("\\{\\w*[tT]oken\\}", idValue);  // {reset_token}
+
+        // If still has placeholders, replace first path parameter
+        if (path.contains("{") && !endpoint.getPathParameters().isEmpty()) {
+            String firstParam = endpoint.getPathParameters().get(0).getName();
+            path = path.replace("{" + firstParam + "}", idValue);
+        }
 
         return context.buildUrl(path);
     }

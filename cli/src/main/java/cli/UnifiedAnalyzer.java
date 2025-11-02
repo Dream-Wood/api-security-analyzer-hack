@@ -1,7 +1,11 @@
 package cli;
 
 import active.ActiveAnalysisEngine;
+import active.auth.AuthCredentials;
+import active.auth.AuthenticationHelper;
 import active.http.HttpClient;
+import active.http.HttpClientConfig;
+import active.http.HttpClientFactory;
 import active.model.ApiEndpoint;
 import active.scanner.ScanContext;
 import report.AnalysisReport;
@@ -18,6 +22,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.logging.Logger;
 
 /**
@@ -191,10 +196,54 @@ public final class UnifiedAnalyzer {
                 .baseUrl(baseUrl)
                 .verbose(config.isVerbose());
 
+            // Try automatic authentication if no auth header provided
             if (config.getAuthHeader() != null) {
                 String[] parts = config.getAuthHeader().split(":", 2);
                 if (parts.length == 2) {
                     contextBuilder.addAuthHeader(parts[0].trim(), parts[1].trim());
+                    logger.info("Using provided authentication header");
+                }
+            } else if (config.isAutoAuth()) {
+                logger.info("Attempting automatic authentication...");
+
+                // Create temporary HTTP client for authentication
+                HttpClientConfig authClientConfig = HttpClientConfig.builder()
+                    .cryptoProtocol(config.getCryptoProtocol())
+                    .verifySsl(config.isVerifySsl())
+                    .build();
+                HttpClient authHttpClient = HttpClientFactory.createClient(authClientConfig);
+
+                AuthenticationHelper authHelper = new AuthenticationHelper(authHttpClient, baseUrl);
+
+                // Try to authenticate
+                Optional<AuthCredentials> primaryCreds = authHelper.attemptAutoAuth(endpoints);
+
+                if (primaryCreds.isPresent()) {
+                    AuthCredentials creds = primaryCreds.get();
+                    String authHeader = creds.getAuthorizationHeader();
+                    if (authHeader != null) {
+                        contextBuilder.addAuthHeader("Authorization", authHeader);
+                        logger.info("✓ Auto-authentication successful for user: " + creds.getUsername());
+                    }
+
+                    // Store primary credentials in shared data
+                    contextBuilder.sharedData(Map.of("primaryCredentials", creds));
+
+                    // Create additional test users for BOLA testing
+                    if (config.isCreateTestUsers()) {
+                        logger.info("Creating additional test users for BOLA testing...");
+                        List<AuthCredentials> testUsers = authHelper.createTestUsers(endpoints, 2);
+                        if (!testUsers.isEmpty()) {
+                            contextBuilder.sharedData(Map.of(
+                                "primaryCredentials", creds,
+                                "testUsers", testUsers
+                            ));
+                            logger.info("✓ Created " + testUsers.size() + " additional test users");
+                        }
+                    }
+                } else {
+                    logger.warning("⚠ Auto-authentication failed. Protected endpoints may not be testable.");
+                    logger.info("  Tip: Provide authentication via --auth-header or ensure API has registration endpoint");
                 }
             }
 
@@ -242,14 +291,28 @@ public final class UnifiedAnalyzer {
                     .build())
                 .toList();
 
-            ApiEndpoint endpoint = ApiEndpoint.builder()
+            ApiEndpoint.Builder endpointBuilder = ApiEndpoint.builder()
                 .path(op.getPath())
                 .method(op.getMethod())
                 .operationId(op.getOperationId())
-                .parameters(params)
-                .build();
+                .parameters(params);
 
-            endpoints.add(endpoint);
+            // Include request body schema if present
+            if (op.getRequestBodySchema().isPresent()) {
+                endpointBuilder.addMetadata("requestBodySchema", op.getRequestBodySchema().get());
+            }
+
+            // Include security schemes
+            if (!op.getSecuritySchemes().isEmpty()) {
+                endpointBuilder.securitySchemes(op.getSecuritySchemes());
+            }
+
+            // Include summary and description
+            if (op.getSummary() != null) {
+                endpointBuilder.addMetadata("summary", op.getSummary());
+            }
+
+            endpoints.add(endpointBuilder.build());
         }
 
         return endpoints;
@@ -266,6 +329,8 @@ public final class UnifiedAnalyzer {
         private final boolean verifySsl;
         private final int maxParallelScans;
         private final boolean verbose;
+        private final boolean autoAuth;
+        private final boolean createTestUsers;
 
         private AnalyzerConfig(Builder builder) {
             this.mode = builder.mode != null ? builder.mode : AnalysisReport.AnalysisMode.STATIC_ONLY;
@@ -277,6 +342,8 @@ public final class UnifiedAnalyzer {
             this.verifySsl = builder.verifySsl;
             this.maxParallelScans = builder.maxParallelScans > 0 ? builder.maxParallelScans : 4;
             this.verbose = builder.verbose;
+            this.autoAuth = builder.autoAuth;
+            this.createTestUsers = builder.createTestUsers;
         }
 
         public static Builder builder() {
@@ -311,6 +378,14 @@ public final class UnifiedAnalyzer {
             return verbose;
         }
 
+        public boolean isAutoAuth() {
+            return autoAuth;
+        }
+
+        public boolean isCreateTestUsers() {
+            return createTestUsers;
+        }
+
         public static class Builder {
             private AnalysisReport.AnalysisMode mode;
             private String baseUrl;
@@ -319,6 +394,8 @@ public final class UnifiedAnalyzer {
             private boolean verifySsl = true;
             private int maxParallelScans = 4;
             private boolean verbose = false;
+            private boolean autoAuth = true; // Enabled by default
+            private boolean createTestUsers = true; // Enabled by default
 
             public Builder mode(AnalysisReport.AnalysisMode mode) {
                 this.mode = mode;
@@ -352,6 +429,16 @@ public final class UnifiedAnalyzer {
 
             public Builder verbose(boolean verbose) {
                 this.verbose = verbose;
+                return this;
+            }
+
+            public Builder autoAuth(boolean autoAuth) {
+                this.autoAuth = autoAuth;
+                return this;
+            }
+
+            public Builder createTestUsers(boolean createTestUsers) {
+                this.createTestUsers = createTestUsers;
                 return this;
             }
 

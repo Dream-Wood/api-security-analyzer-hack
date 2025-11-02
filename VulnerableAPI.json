@@ -1,0 +1,677 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Vulnerable API Test Application",
+    "description": "⚠️ WARNING: Intentionally vulnerable API for security testing only!",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Local test server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "apiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    }
+  },
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Login (SQL Injection)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {"type": "string"},
+                  "password": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Returns token and user data"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Register (Mass Assignment)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {"type": "string"},
+                  "email": {"type": "string"},
+                  "password": {"type": "string"},
+                  "is_admin": {"type": "boolean"},
+                  "role": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User created"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Refresh token (Accepts expired)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New token"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/create-key": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Create API key (Weak generation)",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "API key created"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get user (BOLA)",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "integer"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User data with sensitive info"
+          }
+        }
+      },
+      "put": {
+        "tags": ["Users"],
+        "summary": "Update user (Mass Assignment)",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "integer"}
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User updated"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get all users (BFLA)",
+        "security": [{"bearerAuth": []}],
+        "responses": {
+          "200": {
+            "description": "List of all users"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}": {
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete user (BFLA)",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "integer"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/transfer": {
+      "post": {
+        "tags": ["Transactions"],
+        "summary": "Transfer money (No limits)",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "amount": {"type": "number"},
+                  "to_account": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transfer completed"
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_number}": {
+      "get": {
+        "tags": ["Accounts"],
+        "summary": "Get account (BOLA)",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "account_number",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account details"
+          }
+        }
+      }
+    },
+    "/api/v1/fetch-url": {
+      "post": {
+        "tags": ["Utilities"],
+        "summary": "Fetch URL (SSRF)",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "URL content"
+          }
+        }
+      }
+    },
+    "/api/v1/system/ping": {
+      "post": {
+        "tags": ["System"],
+        "summary": "Ping host (Command Injection)",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "host": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ping result"
+          }
+        }
+      }
+    },
+    "/api/v1/upload": {
+      "post": {
+        "tags": ["Files"],
+        "summary": "Upload file (Path Traversal)",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {"type": "string", "format": "binary"},
+                  "filename": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File uploaded"
+          }
+        }
+      }
+    },
+    "/api/v1/download/{doc_id}": {
+      "get": {
+        "tags": ["Files"],
+        "summary": "Download file (BOLA + Path Traversal)",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "integer"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File content"
+          }
+        }
+      }
+    },
+    "/api/v1/backup/{filepath}": {
+      "get": {
+        "tags": ["Files"],
+        "summary": "Get backup (Path Traversal)",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "filepath",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File content"
+          }
+        }
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "tags": ["Search"],
+        "summary": "Search users (SQL Injection)",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results"
+          }
+        }
+      }
+    },
+    "/api/v1/query": {
+      "post": {
+        "tags": ["Database"],
+        "summary": "Direct SQL query (RCE)",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Query results"
+          }
+        }
+      }
+    },
+    "/api/v1/encrypt": {
+      "post": {
+        "tags": ["Crypto"],
+        "summary": "Encrypt data (Weak crypto)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Encrypted data + key!"
+          }
+        }
+      }
+    },
+    "/api/v1/graphql": {
+      "post": {
+        "tags": ["GraphQL"],
+        "summary": "GraphQL endpoint (No depth limit)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Query results"
+          }
+        }
+      }
+    },
+    "/api/v1/import": {
+      "post": {
+        "tags": ["Import"],
+        "summary": "Import data (Pickle RCE)",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {"type": "string"}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Data imported"
+          }
+        }
+      }
+    },
+    "/api/v1/config": {
+      "post": {
+        "tags": ["Config"],
+        "summary": "Update config (YAML RCE)",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {"type": "string"}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Config updated"
+          }
+        }
+      }
+    },
+    "/api/v1/xml-import": {
+      "post": {
+        "tags": ["Import"],
+        "summary": "Import XML (XXE)",
+        "requestBody": {
+          "content": {
+            "application/xml": {
+              "schema": {"type": "string"}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "XML parsed"
+          }
+        }
+      }
+    },
+    "/api/v1/reset-password": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Reset password (No rate limit)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reset token"
+          }
+        }
+      }
+    },
+    "/api/v1/webhook": {
+      "post": {
+        "tags": ["Webhooks"],
+        "summary": "Webhook (No signature check)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {"type": "string"},
+                  "user_id": {"type": "integer"},
+                  "callback_url": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook processed"
+          }
+        }
+      }
+    },
+    "/api/{version}/status": {
+      "get": {
+        "tags": ["Versions"],
+        "summary": "API status (Version enumeration)",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string", "enum": ["v1", "v2", "internal", "beta"]}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Version info"
+          }
+        }
+      }
+    },
+    "/api/v1/batch": {
+      "post": {
+        "tags": ["Batch"],
+        "summary": "Batch operations (No limit)",
+        "security": [{"bearerAuth": []}],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "operations": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Operations processed"
+          }
+        }
+      }
+    },
+    "/api/v1/export/{format}": {
+      "get": {
+        "tags": ["Export"],
+        "summary": "Export data (Info disclosure)",
+        "security": [{"bearerAuth": []}],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string", "enum": ["json", "csv"]}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All user data"
+          }
+        }
+      }
+    },
+    "/api/v1/profile": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get profile (Cache poisoning)",
+        "parameters": [
+          {
+            "name": "X-Username",
+            "in": "header",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User profile"
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Health check (Info disclosure)",
+        "responses": {
+          "200": {
+            "description": "System info"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Metrics (Exposed internal)",
+        "responses": {
+          "200": {
+            "description": "Internal metrics"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {"name": "Authentication", "description": "Login, register, tokens"},
+    {"name": "Users", "description": "User management"},
+    {"name": "Admin", "description": "Admin functions"},
+    {"name": "Accounts", "description": "Bank accounts"},
+    {"name": "Transactions", "description": "Money transfers"},
+    {"name": "Files", "description": "File operations"},
+    {"name": "Search", "description": "Search functionality"},
+    {"name": "Database", "description": "Database operations"},
+    {"name": "System", "description": "System utilities"},
+    {"name": "Crypto", "description": "Cryptography"},
+    {"name": "GraphQL", "description": "GraphQL queries"},
+    {"name": "Import", "description": "Data import"},
+    {"name": "Export", "description": "Data export"},
+    {"name": "Config", "description": "Configuration"},
+    {"name": "Webhooks", "description": "Webhook handling"},
+    {"name": "Versions", "description": "API versions"},
+    {"name": "Batch", "description": "Batch operations"}
+  ]
+}

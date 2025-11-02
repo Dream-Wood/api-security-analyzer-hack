@@ -6,6 +6,9 @@ import active.model.TestRequest;
 import active.model.TestResponse;
 import active.model.VulnerabilityReport;
 import active.scanner.*;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import model.ParameterSpec;
 import model.Severity;
 
@@ -127,6 +130,8 @@ public final class SqlInjectionScanner extends AbstractScanner {
         "\" AND DBMS_LOCK.SLEEP(5)--"
     );
 
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     public SqlInjectionScanner() {
         super();
     }
@@ -198,7 +203,213 @@ public final class SqlInjectionScanner extends AbstractScanner {
             }
         }
 
+        // Test Case 4: Body parameter SQL injection (for POST/PUT/PATCH)
+        if (vulnerabilities.isEmpty() && hasRequestBody(endpoint)) {
+            SqliTestResult bodyResult = testBodyParameterSqli(endpoint, httpClient, context);
+            totalTests += bodyResult.testsExecuted();
+            if (bodyResult.vulnerability().isPresent()) {
+                vulnerabilities.add(bodyResult.vulnerability().get());
+            }
+        }
+
         return createSuccessResult(endpoint, vulnerabilities, totalTests, startTime);
+    }
+
+    /**
+     * Check if endpoint has request body schema.
+     */
+    private boolean hasRequestBody(ApiEndpoint endpoint) {
+        String method = endpoint.getMethod();
+        boolean isBodyMethod = method.equals("POST") || method.equals("PUT") || method.equals("PATCH");
+
+        if (!isBodyMethod) {
+            return false;
+        }
+
+        // Check if request body schema is present in metadata
+        Object schemaObj = endpoint.getMetadata().get("requestBodySchema");
+        return schemaObj != null;
+    }
+
+    /**
+     * Test for SQL injection in request body parameters.
+     */
+    private SqliTestResult testBodyParameterSqli(
+        ApiEndpoint endpoint,
+        HttpClient httpClient,
+        ScanContext context
+    ) {
+        logger.fine("Testing body parameter SQL injection for: " + endpoint);
+
+        int testsExecuted = 0;
+
+        try {
+            // Get request body schema from metadata
+            Object schemaObj = endpoint.getMetadata().get("requestBodySchema");
+            if (schemaObj == null) {
+                return new SqliTestResult(Optional.empty(), testsExecuted);
+            }
+
+            // Parse the schema to extract field names
+            List<String> fieldNames = extractFieldNamesFromSchema(schemaObj);
+
+            if (fieldNames.isEmpty()) {
+                logger.fine("No testable fields found in request body schema");
+                return new SqliTestResult(Optional.empty(), testsExecuted);
+            }
+
+            logger.fine("Found " + fieldNames.size() + " testable body fields: " + fieldNames);
+
+            // Test each field with error-based SQL injection payloads
+            for (String fieldName : fieldNames) {
+                for (String payload : ERROR_BASED_PAYLOADS) {
+                    TestRequest request = createRequestWithBodyParameter(
+                        endpoint,
+                        context,
+                        fieldName,
+                        payload
+                    );
+
+                    TestResponse response = executeTest(httpClient, request, "Body SQLi: " + fieldName);
+                    testsExecuted++;
+
+                    if (containsSqlError(response)) {
+                        return new SqliTestResult(
+                            Optional.of(createBodyParameterVulnerability(endpoint, fieldName, payload, request, response)),
+                            testsExecuted
+                        );
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            logger.warning("Failed to test body parameters: " + e.getMessage());
+        }
+
+        return new SqliTestResult(Optional.empty(), testsExecuted);
+    }
+
+    /**
+     * Extract field names from request body schema.
+     */
+    private List<String> extractFieldNamesFromSchema(Object schemaObj) {
+        List<String> fieldNames = new ArrayList<>();
+
+        try {
+            if (schemaObj instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> schema = (Map<String, Object>) schemaObj;
+
+                // Look for "properties" in the schema
+                Object propertiesObj = schema.get("properties");
+                if (propertiesObj instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> properties = (Map<String, Object>) propertiesObj;
+                    fieldNames.addAll(properties.keySet());
+                }
+            }
+        } catch (Exception e) {
+            logger.fine("Failed to parse request body schema: " + e.getMessage());
+        }
+
+        return fieldNames;
+    }
+
+    /**
+     * Create a test request with SQL injection payload in JSON body.
+     */
+    private TestRequest createRequestWithBodyParameter(
+        ApiEndpoint endpoint,
+        ScanContext context,
+        String fieldName,
+        String payload
+    ) {
+        try {
+            // Create a simple JSON body with the payload
+            ObjectNode bodyJson = objectMapper.createObjectNode();
+            bodyJson.put(fieldName, payload);
+
+            // Add other fields with default values if available from schema
+            Object schemaObj = endpoint.getMetadata().get("requestBodySchema");
+            if (schemaObj instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> schema = (Map<String, Object>) schemaObj;
+                Object propertiesObj = schema.get("properties");
+
+                if (propertiesObj instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> properties = (Map<String, Object>) propertiesObj;
+
+                    for (String key : properties.keySet()) {
+                        if (!key.equals(fieldName) && !bodyJson.has(key)) {
+                            // Add default values for other required fields
+                            bodyJson.put(key, "test");
+                        }
+                    }
+                }
+            }
+
+            String jsonBody = objectMapper.writeValueAsString(bodyJson);
+            String url = context.buildUrl(endpoint.getPath());
+
+            return TestRequest.builder()
+                .url(url)
+                .method(endpoint.getMethod())
+                .headers(context.getAuthHeaders())
+                .addHeader("Content-Type", "application/json")
+                .body(jsonBody)
+                .build();
+
+        } catch (Exception e) {
+            logger.warning("Failed to create body parameter request: " + e.getMessage());
+            // Fallback to simple request
+            String url = context.buildUrl(endpoint.getPath());
+            return TestRequest.builder()
+                .url(url)
+                .method(endpoint.getMethod())
+                .headers(context.getAuthHeaders())
+                .build();
+        }
+    }
+
+    /**
+     * Create vulnerability report for body parameter SQL injection.
+     */
+    private VulnerabilityReport createBodyParameterVulnerability(
+        ApiEndpoint endpoint,
+        String fieldName,
+        String payload,
+        TestRequest request,
+        TestResponse response
+    ) {
+        return VulnerabilityReport.builder()
+            .type(VulnerabilityReport.VulnerabilityType.SQL_INJECTION)
+            .severity(Severity.CRITICAL)
+            .endpoint(endpoint)
+            .title("SQL Injection - Request Body Parameter")
+            .description(
+                "The endpoint is vulnerable to SQL Injection in the request body field '" + fieldName + "'. " +
+                "Database error messages were detected in the response when injecting SQL syntax into the JSON body. " +
+                "This indicates that user input from the request body is not properly sanitized before being used in SQL queries."
+            )
+            .exploitRequest(request)
+            .exploitResponse(response)
+            .addEvidence("bodyField", fieldName)
+            .addEvidence("payload", payload)
+            .addEvidence("requestBody", request.getBody())
+            .addEvidence("statusCode", response.getStatusCode())
+            .addRecommendation("Use parameterized queries (prepared statements) instead of string concatenation")
+            .addRecommendation("Implement input validation and sanitization for all request body fields")
+            .addRecommendation("Use ORM frameworks that provide SQL injection protection")
+            .addRecommendation("Apply the principle of least privilege for database users")
+            .addRecommendation("Implement Web Application Firewall (WAF) rules to detect SQL injection attempts")
+            .addRecommendation("Never display detailed database errors to end users")
+            .reproductionSteps(
+                "1. Send " + endpoint.getMethod() + " request to " + request.getUrl() + "\n" +
+                "2. Include JSON body with field '" + fieldName + "' set to: " + payload + "\n" +
+                "3. Observe SQL error in response body"
+            )
+            .build();
     }
 
     /**
