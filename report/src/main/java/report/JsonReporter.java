@@ -2,6 +2,9 @@ package report;
 
 import active.ActiveAnalysisEngine;
 import active.model.VulnerabilityReport;
+import active.validator.ContractValidationEngine;
+import active.validator.model.Divergence;
+import active.validator.model.ValidationResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -45,6 +48,11 @@ public final class JsonReporter implements Reporter {
         // Active analysis
         if (report.hasActiveResults()) {
             jsonReport.put("activeAnalysis", buildActiveSection(report.getActiveResult()));
+        }
+
+        // Contract validation
+        if (report.hasContractResults()) {
+            jsonReport.put("contractValidation", buildContractSection(report.getContractResult()));
         }
 
         // Summary
@@ -145,6 +153,52 @@ public final class JsonReporter implements Reporter {
         return activeSection;
     }
 
+    private Map<String, Object> buildContractSection(AnalysisReport.ContractAnalysisResult result) {
+        Map<String, Object> contractSection = new LinkedHashMap<>();
+
+        if (result.hasError()) {
+            contractSection.put("error", result.getErrorMessage());
+            return contractSection;
+        }
+
+        ContractValidationEngine.ContractValidationReport contractReport = result.getReport();
+
+        contractSection.put("endpointsValidated", contractReport.getTotalEndpoints());
+        contractSection.put("totalDivergences", contractReport.getTotalDivergences());
+        contractSection.put("criticalDivergences", contractReport.getCriticalDivergences());
+        contractSection.put("highDivergences", contractReport.getHighDivergences());
+        contractSection.put("fuzzingEnabled", contractReport.isFuzzingEnabled());
+
+        // Statistics
+        contractSection.put("statistics", contractReport.getStatistics());
+
+        // By severity
+        Map<String, Long> bySeverity = new LinkedHashMap<>();
+        contractReport.getDivergencesBySeverity()
+            .forEach((severity, divergences) -> bySeverity.put(severity.name(), (long) divergences.size()));
+        contractSection.put("divergencesBySeverity", bySeverity);
+
+        // Detailed divergences
+        List<Map<String, Object>> divergences = new ArrayList<>();
+        for (ValidationResult result1 : contractReport.getResults()) {
+            for (Divergence divergence : result1.getDivergences()) {
+                Map<String, Object> divMap = new LinkedHashMap<>();
+                divMap.put("type", divergence.getType().name());
+                divMap.put("severity", divergence.getSeverity().name());
+                divMap.put("path", divergence.getPath());
+                divMap.put("field", divergence.getField());
+                divMap.put("message", divergence.getMessage());
+                divMap.put("expectedValue", divergence.getExpectedValue());
+                divMap.put("actualValue", divergence.getActualValue());
+                divMap.put("metadata", divergence.getMetadata());
+                divergences.add(divMap);
+            }
+        }
+        contractSection.put("divergences", divergences);
+
+        return contractSection;
+    }
+
     private Map<String, Object> buildSummary(AnalysisReport report) {
         Map<String, Object> summary = new LinkedHashMap<>();
 
@@ -157,6 +211,11 @@ public final class JsonReporter implements Reporter {
         if (report.hasActiveResults() && !report.getActiveResult().hasError()) {
             summary.put("activeVulnerabilities",
                 report.getActiveResult().getReport().getTotalVulnerabilityCount());
+        }
+
+        if (report.hasContractResults() && !report.getContractResult().hasError()) {
+            summary.put("contractDivergences",
+                report.getContractResult().getReport().getTotalDivergences());
         }
 
         return summary;

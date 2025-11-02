@@ -1,6 +1,7 @@
 package report;
 
 import active.ActiveAnalysisEngine;
+import active.validator.ContractValidationEngine;
 import model.ValidationFinding;
 
 import java.time.Instant;
@@ -18,11 +19,13 @@ public final class AnalysisReport {
     private final AnalysisMode mode;
     private final StaticAnalysisResult staticResult;
     private final ActiveAnalysisResult activeResult;
+    private final ContractAnalysisResult contractResult;
 
     public enum AnalysisMode {
         STATIC_ONLY,
         ACTIVE_ONLY,
-        COMBINED
+        COMBINED,
+        CONTRACT
     }
 
     private AnalysisReport(Builder builder) {
@@ -32,6 +35,7 @@ public final class AnalysisReport {
         this.mode = Objects.requireNonNull(builder.mode);
         this.staticResult = builder.staticResult;
         this.activeResult = builder.activeResult;
+        this.contractResult = builder.contractResult;
     }
 
     public static Builder builder() {
@@ -62,12 +66,20 @@ public final class AnalysisReport {
         return activeResult;
     }
 
+    public ContractAnalysisResult getContractResult() {
+        return contractResult;
+    }
+
     public boolean hasStaticResults() {
         return staticResult != null;
     }
 
     public boolean hasActiveResults() {
         return activeResult != null;
+    }
+
+    public boolean hasContractResults() {
+        return contractResult != null;
     }
 
     public int getTotalIssueCount() {
@@ -77,6 +89,9 @@ public final class AnalysisReport {
         }
         if (activeResult != null) {
             count += activeResult.getReport().getTotalVulnerabilityCount();
+        }
+        if (contractResult != null && !contractResult.hasError()) {
+            count += contractResult.getReport().getTotalDivergences();
         }
         return count;
     }
@@ -144,6 +159,32 @@ public final class AnalysisReport {
         }
     }
 
+    /**
+     * Contract validation result wrapper.
+     */
+    public static final class ContractAnalysisResult {
+        private final ContractValidationEngine.ContractValidationReport report;
+        private final String errorMessage;
+
+        public ContractAnalysisResult(ContractValidationEngine.ContractValidationReport report,
+                                     String errorMessage) {
+            this.report = report;
+            this.errorMessage = errorMessage;
+        }
+
+        public ContractValidationEngine.ContractValidationReport getReport() {
+            return report;
+        }
+
+        public String getErrorMessage() {
+            return errorMessage;
+        }
+
+        public boolean hasError() {
+            return errorMessage != null;
+        }
+    }
+
     public static class Builder {
         private String specLocation;
         private Instant startTime;
@@ -151,6 +192,7 @@ public final class AnalysisReport {
         private AnalysisMode mode;
         private StaticAnalysisResult staticResult;
         private ActiveAnalysisResult activeResult;
+        private ContractAnalysisResult contractResult;
 
         public Builder specLocation(String specLocation) {
             this.specLocation = specLocation;
@@ -179,6 +221,11 @@ public final class AnalysisReport {
 
         public Builder activeResult(ActiveAnalysisResult activeResult) {
             this.activeResult = activeResult;
+            return this;
+        }
+
+        public Builder contractResult(ContractAnalysisResult contractResult) {
+            this.contractResult = contractResult;
             return this;
         }
 

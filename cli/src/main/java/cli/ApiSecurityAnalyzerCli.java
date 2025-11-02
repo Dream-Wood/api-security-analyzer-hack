@@ -34,7 +34,7 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
 
     @Option(
         names = {"-m", "--mode"},
-        description = "Analysis mode: static, active, both (default: static)",
+        description = "Analysis mode: static, active, both, contract (default: static)",
         defaultValue = "static"
     )
     private String mode;
@@ -82,6 +82,12 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
     private boolean verbose;
 
     @Option(
+        names = {"--no-fuzzing"},
+        description = "Disable fuzzing in contract validation (faster)"
+    )
+    private boolean noFuzzing;
+
+    @Option(
         names = {"-o", "--output"},
         description = "Output file for the report (optional, defaults to stdout)"
     )
@@ -105,7 +111,7 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
                 analysisMode = parseMode(mode);
             } catch (IllegalArgumentException e) {
                 out.println("ERROR: " + e.getMessage());
-                out.println("Valid modes: static, active, both");
+                out.println("Valid modes: static, active, both, contract");
                 return 1;
             }
 
@@ -138,6 +144,7 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
                 .cryptoProtocol(protocol)
                 .verifySsl(!noVerifySsl)
                 .verbose(verbose)
+                .noFuzzing(noFuzzing)
                 .build();
 
             // Perform analysis
@@ -175,6 +182,8 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
             return AnalysisReport.AnalysisMode.ACTIVE_ONLY;
         } else if (mode.equalsIgnoreCase("both") || mode.equalsIgnoreCase("combined")) {
             return AnalysisReport.AnalysisMode.COMBINED;
+        } else if (mode.equalsIgnoreCase("contract")) {
+            return AnalysisReport.AnalysisMode.CONTRACT;
         } else {
             throw new IllegalArgumentException("Invalid mode: " + mode);
         }
@@ -218,6 +227,10 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
         if (!hasCriticalOrHigh && report.hasActiveResults() && !report.getActiveResult().hasError()) {
             hasCriticalOrHigh = report.getActiveResult().getReport().getAllVulnerabilities().stream()
                 .anyMatch(v -> v.getSeverity().isCriticalOrHigh());
+        }
+
+        if (!hasCriticalOrHigh && report.hasContractResults() && !report.getContractResult().hasError()) {
+            hasCriticalOrHigh = report.getContractResult().getReport().hasCriticalIssues();
         }
 
         return hasCriticalOrHigh ? 3 : 0;

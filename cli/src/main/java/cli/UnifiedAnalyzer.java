@@ -8,6 +8,7 @@ import active.http.HttpClientConfig;
 import active.http.HttpClientFactory;
 import active.model.ApiEndpoint;
 import active.scanner.ScanContext;
+import active.validator.ContractValidationEngine;
 import report.AnalysisReport;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.servers.Server;
@@ -112,6 +113,23 @@ public final class UnifiedAnalyzer {
                 logger.info("Performing active analysis against: " + baseUrl);
                 AnalysisReport.ActiveAnalysisResult activeResult = performActiveAnalysis(openAPI, baseUrl);
                 reportBuilder.activeResult(activeResult);
+            }
+        }
+
+        // Contract validation
+        if (config.getMode() == AnalysisReport.AnalysisMode.CONTRACT) {
+            String baseUrl = determineBaseUrl(openAPI);
+
+            if (baseUrl == null) {
+                String error = "Contract validation requires a base URL. " +
+                    "Provide --base-url parameter or define servers in OpenAPI spec";
+                logger.warning(error);
+                reportBuilder.contractResult(new AnalysisReport.ContractAnalysisResult(null, error));
+            } else {
+                logger.info("Performing contract validation against: " + baseUrl);
+                AnalysisReport.ContractAnalysisResult contractResult =
+                    performContractValidation(openAPI, baseUrl);
+                reportBuilder.contractResult(contractResult);
             }
         }
 
@@ -268,6 +286,45 @@ public final class UnifiedAnalyzer {
         }
     }
 
+    private AnalysisReport.ContractAnalysisResult performContractValidation(OpenAPI openAPI, String baseUrl) {
+        try {
+            // Create contract validation engine
+            boolean fuzzingEnabled = !config.isNoFuzzing();
+            ContractValidationEngine engine = new ContractValidationEngine(openAPI, fuzzingEnabled);
+
+            // Extract endpoints from OpenAPI spec
+            List<ApiEndpoint> endpoints = extractEndpoints(openAPI);
+            logger.info("Extracted " + endpoints.size() + " endpoints for contract validation");
+
+            if (endpoints.isEmpty()) {
+                logger.warning("No endpoints found in specification");
+                return new AnalysisReport.ContractAnalysisResult(
+                    null, "No endpoints found in specification");
+            }
+
+            // Create HTTP client
+            HttpClientConfig clientConfig = HttpClientConfig.builder()
+                .cryptoProtocol(config.getCryptoProtocol())
+                .verifySsl(config.isVerifySsl())
+                .build();
+            HttpClient httpClient = HttpClientFactory.createClient(clientConfig);
+
+            // Run contract validation
+            ContractValidationEngine.ContractValidationReport report =
+                engine.validate(endpoints, httpClient);
+
+            logger.info("Contract validation completed: " +
+                report.getTotalDivergences() + " divergences found");
+
+            return new AnalysisReport.ContractAnalysisResult(report, null);
+
+        } catch (Exception e) {
+            logger.severe("Contract validation failed: " + e.getMessage());
+            return new AnalysisReport.ContractAnalysisResult(
+                null, "Contract validation failed: " + e.getMessage());
+        }
+    }
+
     /**
      * Extract API endpoints from OpenAPI specification.
      */
@@ -331,6 +388,7 @@ public final class UnifiedAnalyzer {
         private final boolean verbose;
         private final boolean autoAuth;
         private final boolean createTestUsers;
+        private final boolean noFuzzing;
 
         private AnalyzerConfig(Builder builder) {
             this.mode = builder.mode != null ? builder.mode : AnalysisReport.AnalysisMode.STATIC_ONLY;
@@ -344,6 +402,7 @@ public final class UnifiedAnalyzer {
             this.verbose = builder.verbose;
             this.autoAuth = builder.autoAuth;
             this.createTestUsers = builder.createTestUsers;
+            this.noFuzzing = builder.noFuzzing;
         }
 
         public static Builder builder() {
@@ -386,6 +445,10 @@ public final class UnifiedAnalyzer {
             return createTestUsers;
         }
 
+        public boolean isNoFuzzing() {
+            return noFuzzing;
+        }
+
         public static class Builder {
             private AnalysisReport.AnalysisMode mode;
             private String baseUrl;
@@ -396,6 +459,7 @@ public final class UnifiedAnalyzer {
             private boolean verbose = false;
             private boolean autoAuth = true; // Enabled by default
             private boolean createTestUsers = true; // Enabled by default
+            private boolean noFuzzing = false;
 
             public Builder mode(AnalysisReport.AnalysisMode mode) {
                 this.mode = mode;
@@ -439,6 +503,11 @@ public final class UnifiedAnalyzer {
 
             public Builder createTestUsers(boolean createTestUsers) {
                 this.createTestUsers = createTestUsers;
+                return this;
+            }
+
+            public Builder noFuzzing(boolean noFuzzing) {
+                this.noFuzzing = noFuzzing;
                 return this;
             }
 

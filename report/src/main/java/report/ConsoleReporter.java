@@ -2,6 +2,9 @@ package report;
 
 import active.ActiveAnalysisEngine;
 import active.model.VulnerabilityReport;
+import active.validator.ContractValidationEngine;
+import active.validator.model.Divergence;
+import active.validator.model.ValidationResult;
 import model.Severity;
 import model.ValidationFinding;
 
@@ -54,6 +57,11 @@ public final class ConsoleReporter implements Reporter {
         // Active analysis results
         if (report.hasActiveResults()) {
             printActiveResults(writer, report.getActiveResult());
+        }
+
+        // Contract validation results
+        if (report.hasContractResults()) {
+            printContractResults(writer, report.getContractResult());
         }
 
         // Summary
@@ -114,6 +122,113 @@ public final class ConsoleReporter implements Reporter {
             writer.println();
             printDetailedVulnerabilities(writer, activeReport);
         }
+    }
+
+    private void printContractResults(PrintWriter writer, AnalysisReport.ContractAnalysisResult result) {
+        printSection(writer, "Contract Validation Results");
+
+        if (result.hasError()) {
+            printError(writer, result.getErrorMessage());
+            return;
+        }
+
+        ContractValidationEngine.ContractValidationReport contractReport = result.getReport();
+
+        writer.println("Endpoints validated: " + contractReport.getTotalEndpoints());
+        writer.println("Total divergences: " + colorize(
+            String.valueOf(contractReport.getTotalDivergences()), ANSI_BOLD));
+        writer.println("Critical divergences: " + colorize(
+            String.valueOf(contractReport.getCriticalDivergences()), ANSI_RED));
+        writer.println("High divergences: " + colorize(
+            String.valueOf(contractReport.getHighDivergences()), ANSI_YELLOW));
+        writer.println("Fuzzing: " + (contractReport.isFuzzingEnabled() ? "Enabled" : "Disabled"));
+        writer.println();
+
+        if (contractReport.getTotalDivergences() == 0) {
+            printSuccess(writer, "No contract divergences found!");
+        } else {
+            printDivergencesSummary(writer, contractReport);
+            writer.println();
+            printDetailedDivergences(writer, contractReport);
+        }
+    }
+
+    private void printDivergencesSummary(PrintWriter writer, ContractValidationEngine.ContractValidationReport report) {
+        Map<Divergence.Severity, List<Divergence>> bySeverity = report.getDivergencesBySeverity();
+
+        writer.println(colorize("By Severity:", ANSI_BOLD));
+        for (Divergence.Severity severity : Divergence.Severity.values()) {
+            List<Divergence> divergences = bySeverity.get(severity);
+            if (divergences != null && !divergences.isEmpty()) {
+                String severityColor = getDivergenceSeverityColor(severity);
+                String icon = getDivergenceSeverityIcon(severity);
+                writer.println("  " + colorize(icon + " " + severity.name() + ": " + divergences.size(), severityColor));
+            }
+        }
+    }
+
+    private void printDetailedDivergences(PrintWriter writer, ContractValidationEngine.ContractValidationReport report) {
+        Map<Divergence.Severity, List<Divergence>> bySeverity = report.getDivergencesBySeverity();
+
+        for (Divergence.Severity severity : Divergence.Severity.values()) {
+            List<Divergence> divergences = bySeverity.get(severity);
+            if (divergences == null || divergences.isEmpty()) {
+                continue;
+            }
+
+            writer.println();
+            writer.println(colorize(ANSI_BOLD + "[" + severity.name() + "]",
+                getDivergenceSeverityColor(severity)));
+            writer.println();
+
+            for (Divergence divergence : divergences) {
+                printDivergence(writer, divergence);
+            }
+        }
+    }
+
+    private void printDivergence(PrintWriter writer, Divergence divergence) {
+        String severityColor = getDivergenceSeverityColor(divergence.getSeverity());
+        String icon = getDivergenceSeverityIcon(divergence.getSeverity());
+
+        writer.println(colorize(icon + " " + divergence.getType().name(), severityColor));
+
+        if (divergence.getPath() != null) {
+            writer.print("  Path: " + colorize(divergence.getPath(), ANSI_BOLD));
+            if (divergence.getField() != null) {
+                writer.print(" → " + divergence.getField());
+            }
+            writer.println();
+        }
+
+        writer.println("  Message: " + divergence.getMessage());
+
+        if (divergence.getExpectedValue() != null) {
+            writer.println("  Expected: " + divergence.getExpectedValue());
+        }
+
+        if (divergence.getActualValue() != null) {
+            writer.println("  Actual: " + divergence.getActualValue());
+        }
+
+        writer.println();
+    }
+
+    private String getDivergenceSeverityIcon(Divergence.Severity severity) {
+        return switch (severity) {
+            case CRITICAL -> "🔴";
+            case HIGH -> "🟠";
+            case MEDIUM -> "🟡";
+            case LOW -> "🔵";
+        };
+    }
+
+    private String getDivergenceSeverityColor(Divergence.Severity severity) {
+        return switch (severity) {
+            case CRITICAL, HIGH -> ANSI_RED;
+            case MEDIUM -> ANSI_YELLOW;
+            case LOW -> ANSI_BLUE;
+        };
     }
 
     private void printFindingsSummary(PrintWriter writer, List<ValidationFinding> findings) {
@@ -260,6 +375,11 @@ public final class ConsoleReporter implements Reporter {
             if (report.hasActiveResults() && !report.getActiveResult().hasError()) {
                 writer.println("  Active vulnerabilities: " +
                     report.getActiveResult().getReport().getTotalVulnerabilityCount());
+            }
+
+            if (report.hasContractResults() && !report.getContractResult().hasError()) {
+                writer.println("  Contract divergences: " +
+                    report.getContractResult().getReport().getTotalDivergences());
             }
         }
 
