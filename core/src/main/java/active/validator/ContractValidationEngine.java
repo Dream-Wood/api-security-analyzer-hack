@@ -40,6 +40,7 @@ public final class ContractValidationEngine {
     private final OpenAPI openAPI;
     private final EndpointValidator endpointValidator;
     private boolean fuzzingEnabled;
+    private final String baseUrl;
 
     /**
      * Create contract validation engine with OpenAPI specification.
@@ -47,7 +48,7 @@ public final class ContractValidationEngine {
      * @param openAPI the OpenAPI specification to validate against
      */
     public ContractValidationEngine(OpenAPI openAPI) {
-        this(openAPI, true);
+        this(openAPI, null, true);
     }
 
     /**
@@ -57,9 +58,21 @@ public final class ContractValidationEngine {
      * @param fuzzingEnabled whether to enable fuzzing tests
      */
     public ContractValidationEngine(OpenAPI openAPI, boolean fuzzingEnabled) {
+        this(openAPI, null, fuzzingEnabled);
+    }
+
+    /**
+     * Create contract validation engine with base URL and configuration.
+     *
+     * @param openAPI the OpenAPI specification
+     * @param baseUrl the base URL for endpoint testing
+     * @param fuzzingEnabled whether to enable fuzzing tests
+     */
+    public ContractValidationEngine(OpenAPI openAPI, String baseUrl, boolean fuzzingEnabled) {
         this.openAPI = Objects.requireNonNull(openAPI, "OpenAPI spec cannot be null");
+        this.baseUrl = baseUrl;
         this.fuzzingEnabled = fuzzingEnabled;
-        this.endpointValidator = new EndpointValidator(openAPI, fuzzingEnabled);
+        this.endpointValidator = new EndpointValidator(openAPI, baseUrl, fuzzingEnabled);
 
         logger.info("Contract Validation Engine initialized" +
             (fuzzingEnabled ? " with fuzzing enabled" : " (fuzzing disabled)"));

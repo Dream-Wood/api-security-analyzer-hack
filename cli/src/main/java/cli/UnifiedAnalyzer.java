@@ -290,7 +290,7 @@ public final class UnifiedAnalyzer {
         try {
             // Create contract validation engine
             boolean fuzzingEnabled = !config.isNoFuzzing();
-            ContractValidationEngine engine = new ContractValidationEngine(openAPI, fuzzingEnabled);
+            ContractValidationEngine engine = new ContractValidationEngine(openAPI, baseUrl, fuzzingEnabled);
 
             // Extract endpoints from OpenAPI spec
             List<ApiEndpoint> endpoints = extractEndpoints(openAPI);

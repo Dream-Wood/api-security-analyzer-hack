@@ -25,17 +25,23 @@ public final class EndpointValidator {
     private final DivergenceDetector divergenceDetector;
     private final FuzzingGenerator fuzzingGenerator;
     private final boolean enableFuzzing;
+    private final String baseUrl;
 
     public EndpointValidator(OpenAPI openAPI) {
-        this(openAPI, true);
+        this(openAPI, null, true);
     }
 
     public EndpointValidator(OpenAPI openAPI, boolean enableFuzzing) {
+        this(openAPI, null, enableFuzzing);
+    }
+
+    public EndpointValidator(OpenAPI openAPI, String baseUrl, boolean enableFuzzing) {
         this.openAPI = Objects.requireNonNull(openAPI, "OpenAPI cannot be null");
         this.specValidator = new SpecificationValidator();
         this.divergenceDetector = new DivergenceDetector(openAPI);
         this.fuzzingGenerator = new FuzzingGenerator();
         this.enableFuzzing = enableFuzzing;
+        this.baseUrl = baseUrl;
     }
 
     /**
@@ -125,8 +131,9 @@ public final class EndpointValidator {
     private TestResponse testNominalBehavior(ApiEndpoint endpoint, HttpClient httpClient) {
         try {
             // Build a basic request
+            String fullUrl = buildFullUrl(endpoint.getPath());
             TestRequest.Builder requestBuilder = TestRequest.builder()
-                .url(endpoint.getPath())
+                .url(fullUrl)
                 .method(endpoint.getMethod());
 
             // Add any required authentication
@@ -192,8 +199,9 @@ public final class EndpointValidator {
         FuzzTestCase fuzzTest,
         HttpClient httpClient
     ) {
+        String fullUrl = buildFullUrl(endpoint.getPath());
         TestRequest.Builder requestBuilder = TestRequest.builder()
-            .url(endpoint.getPath())
+            .url(fullUrl)
             .method(endpoint.getMethod());
 
         // Add fuzzed parameters
@@ -365,5 +373,20 @@ public final class EndpointValidator {
         stats.put("highDivergences", highDivergences);
 
         return stats;
+    }
+
+    /**
+     * Build full URL by combining base URL with endpoint path.
+     */
+    private String buildFullUrl(String path) {
+        if (baseUrl == null || baseUrl.isEmpty()) {
+            return path;
+        }
+
+        // Remove trailing slash from baseUrl and leading slash from path
+        String normalizedBase = baseUrl.replaceAll("/+$", "");
+        String normalizedPath = path.startsWith("/") ? path : "/" + path;
+
+        return normalizedBase + normalizedPath;
     }
 }

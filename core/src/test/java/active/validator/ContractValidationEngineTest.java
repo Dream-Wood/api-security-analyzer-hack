@@ -15,33 +15,40 @@ import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.Paths;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class ContractValidationEngineTest {
 
     private OpenAPI openAPI;
+
+    @Mock
     private HttpClient mockHttpClient;
 
     @BeforeEach
     void setUp() {
         openAPI = createTestOpenAPI();
-        mockHttpClient = mock(HttpClient.class);
 
-        // Mock successful response
+        // Mock successful response (lenient to avoid UnnecessaryStubbingException)
         TestResponse mockResponse = TestResponse.builder()
             .statusCode(200)
             .body("{\"id\": 1, \"name\": \"test\"}")
             .addHeader("Content-Type", "application/json")
             .build();
 
-        when(mockHttpClient.execute(any(TestRequest.class))).thenReturn(mockResponse);
+        lenient().when(mockHttpClient.execute(any(TestRequest.class))).thenReturn(mockResponse);
     }
 
     private OpenAPI createTestOpenAPI() {
