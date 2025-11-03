@@ -34,7 +34,7 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
 
     @Option(
         names = {"-m", "--mode"},
-        description = "Analysis mode: static, active, both, contract (default: static)",
+        description = "Analysis mode: static, active, both, contract, full (default: static)",
         defaultValue = "static"
     )
     private String mode;
@@ -111,7 +111,7 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
                 analysisMode = parseMode(mode);
             } catch (IllegalArgumentException e) {
                 out.println("ERROR: " + e.getMessage());
-                out.println("Valid modes: static, active, both, contract");
+                out.println("Valid modes: static, active, both, contract, full");
                 return 1;
             }
 
@@ -184,6 +184,8 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
             return AnalysisReport.AnalysisMode.COMBINED;
         } else if (mode.equalsIgnoreCase("contract")) {
             return AnalysisReport.AnalysisMode.CONTRACT;
+        } else if (mode.equalsIgnoreCase("full") || mode.equalsIgnoreCase("all")) {
+            return AnalysisReport.AnalysisMode.FULL;
         } else {
             throw new IllegalArgumentException("Invalid mode: " + mode);
         }

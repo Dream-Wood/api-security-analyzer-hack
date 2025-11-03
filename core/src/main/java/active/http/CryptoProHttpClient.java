@@ -1,5 +1,7 @@
 package active.http;
 
+import active.http.ssl.CryptoProProvider;
+import active.http.ssl.GostTLSContext;
 import active.model.TestRequest;
 import active.model.TestResponse;
 
@@ -8,55 +10,59 @@ import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.security.Provider;
-import java.security.Security;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
  * HTTP client implementation with CryptoPro JCSP support for GOST cryptography.
- * This implementation uses HttpURLConnection with CryptoPro security provider.
  *
- * <p>Supports GOST TLS protocols including GostTLS and GostTLSv1.3.
+ * <p>This implementation uses HttpURLConnection with a custom GOST TLS context
+ * created according to the official CryptoPro pattern.
  *
- * <p><b>Required CryptoPro libraries:</b>
+ * <p><b>Features:</b>
  * <ul>
- *   <li>JCP (Java Crypto Provider) - ru.CryptoPro.JCP.JCP</li>
- *   <li>SSL Provider - ru.CryptoPro.ssl.Provider</li>
- *   <li>Crypto Provider - ru.CryptoPro.Crypto.CryptoProvider</li>
- *   <li>RevCheck (optional) - ru.CryptoPro.reprov.RevCheck</li>
+ *   <li>GOST TLSv1.3 protocol support</li>
+ *   <li>Client certificate authentication via PFX</li>
+ *   <li>Server certificate verification via cacerts</li>
+ *   <li>Certificate revocation checking</li>
  * </ul>
  *
  * <p><b>Configuration via HttpClientConfig:</b>
  * <pre>
- * config.addCustomSetting("gostProtocol", "GostTLSv1.3"); // or "GostTLS"
- * config.addCustomSetting("keyStoreType", "HDImageStore");
- * config.addCustomSetting("keyStorePath", "NONE"); // auto-discovery
+ * HttpClientConfig config = HttpClientConfig.builder()
+ *     .cryptoProtocol(HttpClient.CryptoProtocol.CRYPTOPRO_JCSP)
+ *     .verifySsl(true)
+ *     .addCustomSetting("pfxPath", "certs/cert.pfx")
+ *     .addCustomSetting("pfxPassword", "password")
+ *     .addCustomSetting("pfxResource", "true") // if PFX is in resources
+ *     .build();
  * </pre>
  *
+ * @see GostTLSContext
  * @see <a href="https://habr.com/ru/companies/alfastrah/articles/823974/">GOST TLS Configuration Guide</a>
- * @see <a href="https://habr.com/ru/articles/862188/">CryptoPro in JMeter</a>
  */
 public final class CryptoProHttpClient implements HttpClient {
     private static final Logger logger = Logger.getLogger(CryptoProHttpClient.class.getName());
 
-    // CryptoPro provider class names
-    private static final String JCP_PROVIDER = "ru.CryptoPro.JCP.JCP";
-    private static final String SSL_PROVIDER = "ru.CryptoPro.ssl.Provider";
-    private static final String CRYPTO_PROVIDER = "ru.CryptoPro.Crypto.CryptoProvider";
-    private static final String REVCHECK_PROVIDER = "ru.CryptoPro.reprov.RevCheck";
-
-    // Default GOST protocol
-    private static final String DEFAULT_GOST_PROTOCOL = "GostTLS";
-
     private final HttpClientConfig config;
-    private final SSLContext sslContext;
+    private final GostTLSContext tlsContext;
 
     public CryptoProHttpClient(HttpClientConfig config) {
         this.config = config;
-        initializeCryptoProProviders();
-        this.sslContext = createGostSSLContext();
+
+        // Initialize CryptoPro providers
+        if (!CryptoProProvider.isAvailable()) {
+            throw new RuntimeException(
+                "CryptoPro JCSP libraries not found. " +
+                "Please ensure ru.cryptopro:jcp and related libraries are in classpath."
+            );
+        }
+
+        CryptoProProvider.initialize();
+
+        // Create GOST TLS context
+        this.tlsContext = createGostTLSContext(config);
 
         logger.info("CryptoProHttpClient initialized with GOST TLS support");
     }
@@ -72,7 +78,7 @@ public final class CryptoProHttpClient implements HttpClient {
             // Configure connection
             configureConnection(connection, request);
 
-            // Configure CryptoPro SSL if HTTPS
+            // Configure GOST SSL if HTTPS
             if (request.getFullUrl().startsWith("https://")) {
                 configureHttpsConnection((HttpsURLConnection) connection);
             }
@@ -138,168 +144,57 @@ public final class CryptoProHttpClient implements HttpClient {
 
     @Override
     public void close() {
-        // HttpURLConnection doesn't maintain persistent connections in the same way
-        // No cleanup needed
-    }
-
-    /**
-     * Initialize all required CryptoPro security providers.
-     * Providers are registered in specific order for proper GOST TLS operation.
-     */
-    private void initializeCryptoProProviders() {
-        String[] providers = {
-            JCP_PROVIDER,           // Main cryptographic provider
-            SSL_PROVIDER,           // GOST SSL/TLS provider
-            CRYPTO_PROVIDER,        // Additional crypto operations
-            REVCHECK_PROVIDER       // Certificate revocation checking (optional)
-        };
-
-        for (String providerClass : providers) {
-            try {
-                registerProvider(providerClass);
-            } catch (ClassNotFoundException e) {
-                // RevCheck is optional, others are required
-                if (!providerClass.equals(REVCHECK_PROVIDER)) {
-                    throw new RuntimeException(
-                        "Required CryptoPro provider not found: " + providerClass + ". " +
-                        "Ensure CryptoPro JCP libraries are in classpath.",
-                        e
-                    );
-                } else {
-                    logger.fine("Optional provider not available: " + providerClass);
-                }
-            } catch (Exception e) {
-                throw new RuntimeException(
-                    "Failed to initialize CryptoPro provider: " + providerClass,
-                    e
-                );
-            }
+        if (tlsContext != null) {
+            tlsContext.close();
         }
     }
 
     /**
-     * Register a security provider by class name.
+     * Create GOST TLS context from HttpClientConfig.
      */
-    private void registerProvider(String className) throws Exception {
-        Class<?> providerClass = Class.forName(className);
-        Provider provider = (Provider) providerClass.getDeclaredConstructor().newInstance();
-
-        // Check if already registered
-        if (Security.getProvider(provider.getName()) == null) {
-            Security.addProvider(provider);
-            logger.info("Registered CryptoPro provider: " + provider.getName() +
-                       " (" + className + ")");
-        } else {
-            logger.fine("Provider already registered: " + provider.getName());
-        }
-    }
-
-    /**
-     * Create and configure GOST SSL context.
-     * Uses GostTLS or GostTLSv1.3 protocol with CryptoPro provider.
-     */
-    private SSLContext createGostSSLContext() {
+    private GostTLSContext createGostTLSContext(HttpClientConfig config) {
         try {
-            // Get protocol from config or use default
-            String protocol = config.getCustomSetting("gostProtocol")
+            GostTLSContext.Builder builder = GostTLSContext.builder();
+
+            // Get PFX configuration
+            Optional<Object> pfxPath = config.getCustomSetting("pfxPath");
+            Optional<Object> pfxPassword = config.getCustomSetting("pfxPassword");
+            boolean isResource = config.getCustomSetting("pfxResource")
                 .map(Object::toString)
-                .orElse(DEFAULT_GOST_PROTOCOL);
+                .map(Boolean::parseBoolean)
+                .orElse(false);
 
-            logger.info("Creating GOST SSL context with protocol: " + protocol);
+            // Configure PFX certificate if provided
+            if (pfxPath.isPresent()) {
+                String path = pfxPath.get().toString();
+                String password = pfxPassword.map(Object::toString).orElse("");
 
-            // Create SSL context with GOST protocol
-            SSLContext context = SSLContext.getInstance(protocol);
-
-            // Initialize based on SSL verification setting
-            if (config.isVerifySsl()) {
-                // For production: use proper KeyManager and TrustManager
-                KeyManager[] keyManagers = createKeyManagers();
-                TrustManager[] trustManagers = createTrustManagers();
-                context.init(keyManagers, trustManagers, new java.security.SecureRandom());
-
-                logger.info("SSL context initialized with certificate verification");
+                if (isResource) {
+                    builder.pfxResource(path, password);
+                    logger.info("Configured PFX certificate from resource: " + path);
+                } else {
+                    builder.pfxCertificate(path, password);
+                    logger.info("Configured PFX certificate from file: " + path);
+                }
             } else {
-                // For testing: trust all certificates
-                logger.warning("SSL verification disabled - USING TRUST-ALL MODE (testing only!)");
-                TrustManager[] trustAll = createTrustAllManager();
-                context.init(null, trustAll, new java.security.SecureRandom());
+                logger.info("No PFX certificate configured, using server authentication only");
             }
 
-            return context;
+            // Configure SSL verification
+            boolean verifySsl = config.isVerifySsl();
+            if (!verifySsl) {
+                logger.warning("SSL verification disabled (testing mode)");
+            }
+            builder.disableVerification(!verifySsl);
+
+            return builder.build();
 
         } catch (Exception e) {
             throw new RuntimeException(
-                "Failed to create GOST SSL context. " +
+                "Failed to create GOST TLS context. " +
                 "Ensure CryptoPro providers are properly configured and licensed.",
                 e
             );
-        }
-    }
-
-    /**
-     * Create KeyManagers for client certificate authentication.
-     * Uses HDImageStore for CryptoPro key containers.
-     */
-    private KeyManager[] createKeyManagers() throws Exception {
-        try {
-            String keyStoreType = config.getCustomSetting("keyStoreType")
-                .map(Object::toString)
-                .orElse("HDImageStore");
-
-            String keyStorePath = config.getCustomSetting("keyStorePath")
-                .map(Object::toString)
-                .orElse("NONE"); // NONE = auto-discovery of key containers
-
-            logger.fine("Loading key store: type=" + keyStoreType + ", path=" + keyStorePath);
-
-            // Load key store
-            java.security.KeyStore keyStore = java.security.KeyStore.getInstance(keyStoreType);
-
-            if ("NONE".equals(keyStorePath)) {
-                // Auto-discovery mode - CryptoPro will find available containers
-                keyStore.load(null, null);
-            } else {
-                // Load from specific path (if needed)
-                char[] password = config.getCustomSetting("keyStorePassword")
-                    .map(Object::toString)
-                    .map(String::toCharArray)
-                    .orElse(null);
-
-                try (var is = new java.io.FileInputStream(keyStorePath)) {
-                    keyStore.load(is, password);
-                }
-            }
-
-            // Initialize KeyManagerFactory
-            KeyManagerFactory kmf = KeyManagerFactory.getInstance(
-                KeyManagerFactory.getDefaultAlgorithm()
-            );
-            kmf.init(keyStore, null);
-
-            return kmf.getKeyManagers();
-
-        } catch (Exception e) {
-            logger.warning("Failed to create KeyManagers, using null: " + e.getMessage());
-            return null; // Null is acceptable if client certificates not needed
-        }
-    }
-
-    /**
-     * Create TrustManagers for server certificate verification.
-     */
-    private TrustManager[] createTrustManagers() throws Exception {
-        try {
-            // Use system trust store (cacerts) with GOST certificates
-            TrustManagerFactory tmf = TrustManagerFactory.getInstance(
-                TrustManagerFactory.getDefaultAlgorithm()
-            );
-            tmf.init((java.security.KeyStore) null);
-
-            return tmf.getTrustManagers();
-
-        } catch (Exception e) {
-            logger.warning("Failed to create TrustManagers: " + e.getMessage());
-            throw e;
         }
     }
 
@@ -316,32 +211,13 @@ public final class CryptoProHttpClient implements HttpClient {
     }
 
     private void configureHttpsConnection(HttpsURLConnection connection) {
-        // Apply pre-configured GOST SSL context
-        connection.setSSLSocketFactory(sslContext.getSocketFactory());
+        // Apply GOST SSL context
+        connection.setSSLSocketFactory(tlsContext.getSocketFactory());
 
         // Disable hostname verification if SSL verification is disabled
         if (!config.isVerifySsl()) {
             connection.setHostnameVerifier((hostname, session) -> true);
         }
-    }
-
-    private TrustManager[] createTrustAllManager() {
-        return new TrustManager[]{
-            new X509TrustManager() {
-                @Override
-                public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {
-                }
-
-                @Override
-                public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {
-                }
-
-                @Override
-                public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-                    return new java.security.cert.X509Certificate[0];
-                }
-            }
-        };
     }
 
     private String readResponseBody(HttpURLConnection connection, int statusCode) throws IOException {

@@ -80,6 +80,50 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- CryptoPro GOST Cryptography -->
+        <dependency>
+            <groupId>ru.cryptopro</groupId>
+            <artifactId>jcp</artifactId>
+            <version>2.0.45549</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>ru.cryptopro</groupId>
+            <artifactId>cpssl</artifactId>
+            <version>2.0.45549</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>ru.cryptopro</groupId>
+            <artifactId>jcryptop</artifactId>
+            <version>2.0.45549</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>ru.cryptopro</groupId>
+            <artifactId>jcprevcheck</artifactId>
+            <version>2.0.45549</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>ru.cryptopro</groupId>
+            <artifactId>jcprevtools</artifactId>
+            <version>2.0.45549</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>ru.cryptopro</groupId>
+            <artifactId>asn1rt</artifactId>
+            <version>2.0.45549</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>ru.cryptopro</groupId>
+            <artifactId>asn1p</artifactId>
+            <version>2.0.45549</version>
+            <optional>true</optional>
+        </dependency>
+
     </dependencies>
 
     <build>

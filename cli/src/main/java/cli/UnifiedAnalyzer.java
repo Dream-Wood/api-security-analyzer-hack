@@ -89,7 +89,8 @@ public final class UnifiedAnalyzer {
 
         // Static analysis
         if (config.getMode() == AnalysisReport.AnalysisMode.STATIC_ONLY ||
-            config.getMode() == AnalysisReport.AnalysisMode.COMBINED) {
+            config.getMode() == AnalysisReport.AnalysisMode.COMBINED ||
+            config.getMode() == AnalysisReport.AnalysisMode.FULL) {
 
             logger.info("Performing static analysis");
             AnalysisReport.StaticAnalysisResult staticResult = performStaticAnalysis(
@@ -99,7 +100,8 @@ public final class UnifiedAnalyzer {
 
         // Active analysis
         if (config.getMode() == AnalysisReport.AnalysisMode.ACTIVE_ONLY ||
-            config.getMode() == AnalysisReport.AnalysisMode.COMBINED) {
+            config.getMode() == AnalysisReport.AnalysisMode.COMBINED ||
+            config.getMode() == AnalysisReport.AnalysisMode.FULL) {
 
             // Determine base URL: use config override or extract from spec
             String baseUrl = determineBaseUrl(openAPI);
@@ -117,7 +119,8 @@ public final class UnifiedAnalyzer {
         }
 
         // Contract validation
-        if (config.getMode() == AnalysisReport.AnalysisMode.CONTRACT) {
+        if (config.getMode() == AnalysisReport.AnalysisMode.CONTRACT ||
+            config.getMode() == AnalysisReport.AnalysisMode.FULL) {
             String baseUrl = determineBaseUrl(openAPI);
 
             if (baseUrl == null) {

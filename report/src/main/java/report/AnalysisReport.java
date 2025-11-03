@@ -24,8 +24,9 @@ public final class AnalysisReport {
     public enum AnalysisMode {
         STATIC_ONLY,
         ACTIVE_ONLY,
-        COMBINED,
-        CONTRACT
+        COMBINED,      // Static + Active
+        CONTRACT,
+        FULL           // Static + Active + Contract
     }
 
     private AnalysisReport(Builder builder) {
