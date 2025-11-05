@@ -1,0 +1,929 @@
+.results-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--bg-primary);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
+}
+
+.results-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.results-tabs {
+  display: flex;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm);
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
+}
+
+.results-tabs button {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.results-tabs button:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.results-tabs button.active {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+.results-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-lg);
+}
+
+.results-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+  gap: var(--spacing-md);
+}
+
+.results-error {
+  padding: var(--spacing-md);
+  background-color: #fee2e2;
+  color: var(--error-color);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--error-color);
+}
+
+.results-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.summary-card {
+  background-color: var(--bg-secondary);
+  padding: var(--spacing-lg);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+}
+
+.summary-card h3 {
+  margin-top: 0;
+  margin-bottom: var(--spacing-md);
+}
+
+.summary-card h4 {
+  margin-top: 0;
+  margin-bottom: var(--spacing-sm);
+  font-size: 1rem;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.summary-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.summary-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.summary-value.issues {
+  color: var(--error-color);
+}
+
+.summary-value.success {
+  color: var(--success-color);
+}
+
+.results-details h3 {
+  margin-top: 0;
+  margin-bottom: var(--spacing-lg);
+}
+
+.findings-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.finding-item {
+  background-color: var(--bg-secondary);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius);
+  border-left: 4px solid var(--border-color);
+}
+
+.finding-item.severity-critical {
+  border-left-color: #991b1b;
+  background-color: #fef2f2;
+}
+
+.finding-item.severity-high {
+  border-left-color: var(--error-color);
+  background-color: #fef2f2;
+}
+
+.finding-item.severity-medium {
+  border-left-color: var(--warning-color);
+  background-color: #fffbeb;
+}
+
+.finding-item.severity-low {
+  border-left-color: var(--info-color);
+  background-color: #eff6ff;
+}
+
+.finding-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-sm);
+}
+
+.severity-badge {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.severity-badge.critical {
+  background-color: #991b1b;
+  color: white;
+}
+
+.severity-badge.high {
+  background-color: var(--error-color);
+  color: white;
+}
+
+.severity-badge.medium {
+  background-color: var(--warning-color);
+  color: white;
+}
+
+.severity-badge.low {
+  background-color: var(--info-color);
+  color: white;
+}
+
+.finding-location,
+.finding-type {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.finding-title {
+  font-weight: 600;
+  margin-bottom: var(--spacing-xs);
+}
+
+.finding-message {
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: var(--spacing-sm);
+}
+
+.finding-endpoint {
+  margin: var(--spacing-sm) 0;
+}
+
+.finding-endpoint code {
+  background-color: var(--bg-tertiary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+.finding-recommendation {
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  background-color: #e0f2fe;
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+.contract-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.contract-stat {
+  text-align: center;
+  padding: var(--spacing-md);
+  background-color: var(--bg-secondary);
+  border-radius: var(--border-radius);
+}
+
+.contract-stat.success {
+  background-color: #d1fae5;
+}
+
+.contract-stat.error {
+  background-color: #fee2e2;
+}
+
+.stat-value {
+  display: block;
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: var(--spacing-xs);
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.endpoints-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.endpoint-item {
+  background-color: var(--bg-secondary);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius);
+}
+
+.endpoint-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-sm);
+}
+
+.endpoint-header code {
+  font-size: 0.875rem;
+}
+
+.status-passed {
+  color: var(--success-color);
+  font-weight: 600;
+}
+
+.status-failed {
+  color: var(--error-color);
+  font-weight: 600;
+}
+
+.endpoint-issues {
+  margin-top: var(--spacing-sm);
+  margin-left: var(--spacing-lg);
+  list-style: disc;
+  color: var(--error-color);
+}
+
+.endpoint-issues li {
+  margin-bottom: var(--spacing-xs);
+}
+
+.success-message {
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: var(--success-color);
+  background-color: #d1fae5;
+  border-radius: var(--border-radius);
+  font-weight: 500;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--border-color);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Endpoint-based vulnerability view */
+.vulnerability-summary {
+  display: flex;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md);
+  background-color: var(--bg-secondary);
+  border-radius: var(--border-radius);
+}
+
+.summary-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.endpoints-vulnerability-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.endpoint-vulnerability-item {
+  background-color: var(--bg-secondary);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.endpoint-vulnerability-header {
+  padding: var(--spacing-md);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.endpoint-vulnerability-header:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.endpoint-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex: 1;
+  min-width: 0;
+}
+
+.expand-icon {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  flex-shrink: 0;
+  width: 16px;
+}
+
+.endpoint-code {
+  font-family: monospace;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.method-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.method-badge.get {
+  background-color: #10b981;
+  color: white;
+}
+
+.method-badge.post {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.method-badge.put {
+  background-color: #f59e0b;
+  color: white;
+}
+
+.method-badge.patch {
+  background-color: #8b5cf6;
+  color: white;
+}
+
+.method-badge.delete {
+  background-color: #ef4444;
+  color: white;
+}
+
+.endpoint-vulnerability-badges {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.total-badge {
+  padding: 4px 8px;
+  background-color: var(--bg-tertiary);
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.severity-count {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: white;
+}
+
+.severity-count.critical {
+  background-color: #991b1b;
+}
+
+.severity-count.high {
+  background-color: var(--error-color);
+}
+
+.severity-count.medium {
+  background-color: var(--warning-color);
+}
+
+.severity-count.low {
+  background-color: var(--info-color);
+}
+
+.endpoint-vulnerabilities-details {
+  border-top: 1px solid var(--border-color);
+  padding: var(--spacing-md);
+  background-color: var(--bg-primary);
+}
+
+.vulnerability-detail-item {
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  background-color: var(--bg-secondary);
+  border-radius: var(--border-radius);
+  border-left: 4px solid var(--border-color);
+}
+
+.vulnerability-detail-item:last-child {
+  margin-bottom: 0;
+}
+
+.vulnerability-detail-item.severity-critical {
+  border-left-color: #991b1b;
+  background-color: #fef2f2;
+}
+
+.vulnerability-detail-item.severity-high {
+  border-left-color: var(--error-color);
+  background-color: #fef2f2;
+}
+
+.vulnerability-detail-item.severity-medium {
+  border-left-color: var(--warning-color);
+  background-color: #fffbeb;
+}
+
+.vulnerability-detail-item.severity-low {
+  border-left-color: var(--info-color);
+  background-color: #eff6ff;
+}
+
+.vulnerability-detail-header {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+  margin-bottom: var(--spacing-sm);
+}
+
+.vulnerability-type {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.vulnerability-title {
+  font-weight: 600;
+  font-size: 1.05rem;
+  margin-bottom: var(--spacing-md);
+  color: var(--text-primary);
+}
+
+.vulnerability-section {
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+}
+
+.vulnerability-section strong {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.vulnerability-section p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.reproduction-steps {
+  background-color: var(--bg-tertiary);
+  padding: var(--spacing-sm);
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.875rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-x: auto;
+  margin: var(--spacing-sm) 0 0 0;
+}
+
+.remediation-list {
+  margin: var(--spacing-sm) 0 0 0;
+  padding-left: var(--spacing-lg);
+  list-style: disc;
+}
+
+.remediation-list li {
+  margin-bottom: var(--spacing-xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.evidence-data {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+}
+
+.evidence-item {
+  display: flex;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs);
+  background-color: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+.evidence-key {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.evidence-value {
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+/* Contract-specific styles */
+.status-badge-large {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: white;
+}
+
+.status-badge-large.passed {
+  background-color: var(--success-color);
+}
+
+.status-badge-large.failed {
+  background-color: var(--error-color);
+}
+
+.endpoint-vulnerability-item.passed {
+  border-left: 4px solid var(--success-color);
+}
+
+.endpoint-vulnerability-item.failed {
+  border-left: 4px solid var(--error-color);
+}
+
+.endpoint-vulnerability-item.warning {
+  border-left: 4px solid var(--warning-color);
+}
+
+.test-passed {
+  color: var(--success-color);
+}
+
+.test-failed {
+  color: var(--error-color);
+}
+
+.method-badge.general {
+  background-color: #9e9e9e;
+  color: white;
+}
+
+/* Analysis Results Card */
+.analysis-results-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none !important;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  animation: slideInUp 0.5s ease-out;
+}
+
+.analysis-results-card h4 {
+  color: white;
+  margin-bottom: var(--spacing-md);
+  font-size: 1.2rem;
+}
+
+.analysis-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.analysis-result-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+  cursor: default;
+}
+
+.analysis-result-item:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.result-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.result-content {
+  flex: 1;
+}
+
+.result-label {
+  font-size: 0.875rem;
+  opacity: 0.9;
+  margin-bottom: 4px;
+}
+
+.result-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+/* Animations */
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.summary-card {
+  animation: fadeIn 0.4s ease-out;
+}
+
+.endpoint-vulnerability-item {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.endpoint-vulnerability-header {
+  transition: all 0.2s ease;
+}
+
+.endpoint-vulnerability-header:active {
+  transform: scale(0.98);
+}
+
+.expand-icon {
+  transition: transform 0.3s ease;
+}
+
+.vulnerability-detail-item {
+  animation: slideInUp 0.3s ease-out;
+}
+
+/* Status badge animations */
+.status-badge {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.status-badge.running {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Severity badges animation on hover */
+.severity-badge {
+  transition: all 0.2s ease;
+}
+
+.severity-badge:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Summary grid animation */
+.summary-grid {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.summary-item {
+  transition: all 0.3s ease;
+}
+
+.summary-item:hover {
+  transform: translateY(-2px);
+}
+
+/* Tab animation */
+.results-tabs button {
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.results-tabs button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.results-tabs button:hover::before {
+  left: 100%;
+}
+
+.results-tabs button.active {
+  animation: slideInDown 0.3s ease-out;
+}
+
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Method badge animations */
+.method-badge {
+  transition: all 0.2s ease;
+}
+
+.method-badge:hover {
+  transform: scale(1.1);
+}
+
+/* Smooth expand/collapse animation */
+.endpoint-vulnerabilities-details {
+  animation: expandDown 0.3s ease-out;
+  overflow: hidden;
+}
+
+@keyframes expandDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 5000px;
+  }
+}
+
+/* Loading spinner enhancement */
+.spinner {
+  animation: spin 1s linear infinite, pulse 2s ease-in-out infinite;
+}
+
+/* Success message animation */
+.success-message {
+  animation: bounceIn 0.6s ease-out;
+}
+
+@keyframes bounceIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  70% {
+    transform: scale(0.9);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Card hover effects */
+.summary-card {
+  transition: all 0.3s ease;
+}
+
+.summary-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+/* Endpoint item hover glow effect */
+.endpoint-vulnerability-item {
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.endpoint-vulnerability-item::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: inherit;
+  opacity: 0;
+  box-shadow: 0 0 20px rgba(37, 99, 235, 0.3);
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.endpoint-vulnerability-item:hover::after {
+  opacity: 1;
+}

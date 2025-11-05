@@ -44,6 +44,7 @@ public final class CryptoProProvider {
     public enum ProviderType {
         /** Main Java Crypto Provider */
         JCP("ru.CryptoPro.JCP.JCP", true),
+        JCSP("ru.CryptoPro.JCSP.JCSP", true),
 
         /** SSL/TLS Provider for GOST protocols */
         SSL("ru.CryptoPro.ssl.Provider", true),

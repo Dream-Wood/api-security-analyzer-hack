@@ -30,20 +30,48 @@ public final class ActiveAnalysisEngine {
         this.analysisConfig = analysisConfig;
 
         // Create HTTP client based on config
-        HttpClientConfig httpConfig = HttpClientConfig.builder()
+        HttpClientConfig.Builder httpConfigBuilder = HttpClientConfig.builder()
             .cryptoProtocol(analysisConfig.getCryptoProtocol())
             .connectTimeout(Duration.ofSeconds(30))
             .readTimeout(Duration.ofSeconds(30))
             .followRedirects(true)
-            .verifySsl(analysisConfig.isVerifySsl())
-            .build();
+            .verifySsl(analysisConfig.isVerifySsl());
 
+        // Add GOST configuration if provided
+        if (analysisConfig.getGostPfxPath() != null) {
+            httpConfigBuilder.addCustomSetting("pfxPath", analysisConfig.getGostPfxPath());
+        }
+        if (analysisConfig.getGostPfxPassword() != null) {
+            httpConfigBuilder.addCustomSetting("pfxPassword", analysisConfig.getGostPfxPassword());
+        }
+        if (analysisConfig.isGostPfxResource()) {
+            httpConfigBuilder.addCustomSetting("pfxResource", "true");
+        }
+
+        HttpClientConfig httpConfig = httpConfigBuilder.build();
         this.httpClient = HttpClientFactory.createClient(httpConfig);
         this.scannerRegistry = new ScannerRegistry();
 
         // Auto-discover and register scanners using ServiceLoader
         int scannersRegistered = ScannerAutoDiscovery.discoverAndRegister(scannerRegistry);
         logger.info("Auto-registered " + scannersRegistered + " scanner(s) via ServiceLoader");
+
+        // Configure scanner enabled/disabled status based on configuration
+        if (analysisConfig.getEnabledScanners() != null && !analysisConfig.getEnabledScanners().isEmpty()) {
+            Set<String> enabledSet = new HashSet<>(analysisConfig.getEnabledScanners());
+            for (VulnerabilityScanner scanner : scannerRegistry.getAllScanners()) {
+                boolean shouldEnable = enabledSet.contains(scanner.getId());
+                ScannerConfig newConfig = ScannerConfig.builder()
+                    .enabled(shouldEnable)
+                    .maxTestsPerEndpoint(scanner.getConfig().getMaxTestsPerEndpoint())
+                    .timeoutSeconds(scanner.getConfig().getTimeoutSeconds())
+                    .build();
+                scanner.setConfig(newConfig);
+            }
+            logger.info("Configured scanner selection: " + enabledSet.size() + " enabled out of " + scannersRegistered);
+        } else {
+            logger.info("All scanners enabled by default");
+        }
 
         // Create thread pool for parallel scanning
         this.executorService = Executors.newFixedThreadPool(
@@ -168,6 +196,10 @@ public final class ActiveAnalysisEngine {
         private final HttpClient.CryptoProtocol cryptoProtocol;
         private final boolean verifySsl;
         private final int maxParallelScans;
+        private final String gostPfxPath;
+        private final String gostPfxPassword;
+        private final boolean gostPfxResource;
+        private final List<String> enabledScanners;
 
         private AnalysisConfig(Builder builder) {
             this.cryptoProtocol = builder.cryptoProtocol != null
@@ -177,6 +209,10 @@ public final class ActiveAnalysisEngine {
             this.maxParallelScans = builder.maxParallelScans > 0
                 ? builder.maxParallelScans
                 : Runtime.getRuntime().availableProcessors();
+            this.gostPfxPath = builder.gostPfxPath;
+            this.gostPfxPassword = builder.gostPfxPassword;
+            this.gostPfxResource = builder.gostPfxResource;
+            this.enabledScanners = builder.enabledScanners;
         }
 
         public static Builder builder() {
@@ -195,10 +231,30 @@ public final class ActiveAnalysisEngine {
             return maxParallelScans;
         }
 
+        public String getGostPfxPath() {
+            return gostPfxPath;
+        }
+
+        public String getGostPfxPassword() {
+            return gostPfxPassword;
+        }
+
+        public boolean isGostPfxResource() {
+            return gostPfxResource;
+        }
+
+        public List<String> getEnabledScanners() {
+            return enabledScanners;
+        }
+
         public static class Builder {
             private HttpClient.CryptoProtocol cryptoProtocol;
             private boolean verifySsl = true;
             private int maxParallelScans = 4;
+            private String gostPfxPath;
+            private String gostPfxPassword;
+            private boolean gostPfxResource;
+            private List<String> enabledScanners;
 
             public Builder cryptoProtocol(HttpClient.CryptoProtocol cryptoProtocol) {
                 this.cryptoProtocol = cryptoProtocol;
@@ -212,6 +268,26 @@ public final class ActiveAnalysisEngine {
 
             public Builder maxParallelScans(int maxParallelScans) {
                 this.maxParallelScans = maxParallelScans;
+                return this;
+            }
+
+            public Builder gostPfxPath(String gostPfxPath) {
+                this.gostPfxPath = gostPfxPath;
+                return this;
+            }
+
+            public Builder gostPfxPassword(String gostPfxPassword) {
+                this.gostPfxPassword = gostPfxPassword;
+                return this;
+            }
+
+            public Builder gostPfxResource(boolean gostPfxResource) {
+                this.gostPfxResource = gostPfxResource;
+                return this;
+            }
+
+            public Builder enabledScanners(List<String> enabledScanners) {
+                this.enabledScanners = enabledScanners;
                 return this;
             }
 

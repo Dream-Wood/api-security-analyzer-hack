@@ -1,0 +1,220 @@
+.logs-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--bg-primary);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.logs-panel.collapsed {
+  height: auto;
+  min-height: auto;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.logs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.logs-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  transition: left 0.5s ease;
+}
+
+.logs-header:hover::before {
+  left: 100%;
+}
+
+.logs-header:hover {
+  background: linear-gradient(135deg, #e3e7ed 0%, #b5c3d9 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.logs-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.logs-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.logs-count {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  background-color: var(--bg-tertiary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: 12px;
+}
+
+.collapse-button {
+  background: rgba(255, 255, 255, 0.3);
+  border: none;
+  color: var(--text-primary);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 6px;
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.collapse-button:hover {
+  background: rgba(255, 255, 255, 0.5);
+  transform: scale(1.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.collapse-button:active {
+  transform: scale(0.95);
+}
+
+.logs-count {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  animation: fadeIn 0.5s ease-out;
+}
+
+.logs-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.9rem;
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+}
+
+.logs-empty {
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.log-entry {
+  display: flex;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  margin-bottom: 2px;
+  border-left: 3px solid transparent;
+}
+
+.log-entry:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.log-timestamp {
+  color: #808080;
+  flex-shrink: 0;
+}
+
+.log-level {
+  font-weight: bold;
+  flex-shrink: 0;
+  min-width: 60px;
+}
+
+.log-message {
+  flex: 1;
+  word-break: break-word;
+}
+
+.log-level-info {
+  border-left-color: var(--info-color);
+}
+
+.log-level-info .log-level {
+  color: #4fc3f7;
+}
+
+.log-level-warning {
+  border-left-color: var(--warning-color);
+}
+
+.log-level-warning .log-level {
+  color: #ffb74d;
+}
+
+.log-level-error {
+  border-left-color: var(--error-color);
+}
+
+.log-level-error .log-level {
+  color: #ef5350;
+}
+
+.log-level-debug {
+  border-left-color: var(--secondary-color);
+}
+
+.log-level-debug .log-level {
+  color: #9e9e9e;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.log-entry {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.logs-content {
+  animation: fadeIn 0.4s ease-out;
+}
+
+/* Logs content scroll animation */
+.logs-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.logs-content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.logs-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  transition: background 0.3s ease;
+}
+
+.logs-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}

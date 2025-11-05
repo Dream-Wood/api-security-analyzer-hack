@@ -64,6 +64,24 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
     private boolean noVerifySsl;
 
     @Option(
+        names = {"--gost-pfx-path"},
+        description = "Path to PFX certificate file for GOST TLS (e.g., certs/cert.pfx)"
+    )
+    private String gostPfxPath;
+
+    @Option(
+        names = {"--gost-pfx-password"},
+        description = "Password for PFX certificate (use with --gost-pfx-path)"
+    )
+    private String gostPfxPassword;
+
+    @Option(
+        names = {"--gost-pfx-resource"},
+        description = "Treat PFX path as classpath resource (default: false)"
+    )
+    private boolean gostPfxResource;
+
+    @Option(
         names = {"-f", "--format"},
         description = "Output format: console, json (default: console)"
     )
@@ -92,6 +110,24 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
         description = "Output file for the report (optional, defaults to stdout)"
     )
     private String outputFile;
+
+    @Option(
+        names = {"--no-auto-auth"},
+        description = "Disable automatic authentication"
+    )
+    private boolean noAutoAuth;
+
+    @Option(
+        names = {"--no-test-users"},
+        description = "Disable creation of test users for BOLA testing"
+    )
+    private boolean noTestUsers;
+
+    @Option(
+        names = {"--max-parallel-scans"},
+        description = "Maximum number of parallel scans (default: 4)"
+    )
+    private Integer maxParallelScans;
 
     @Override
     public Integer call() {
@@ -137,15 +173,26 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
             }
 
             // Configure analyzer
-            UnifiedAnalyzer.AnalyzerConfig config = UnifiedAnalyzer.AnalyzerConfig.builder()
+            UnifiedAnalyzer.AnalyzerConfig.Builder configBuilder = UnifiedAnalyzer.AnalyzerConfig.builder()
                 .mode(analysisMode)
                 .baseUrl(baseUrl)
                 .authHeader(authHeader)
                 .cryptoProtocol(protocol)
                 .verifySsl(!noVerifySsl)
+                .gostPfxPath(gostPfxPath)
+                .gostPfxPassword(gostPfxPassword)
+                .gostPfxResource(gostPfxResource)
                 .verbose(verbose)
                 .noFuzzing(noFuzzing)
-                .build();
+                .autoAuth(!noAutoAuth)
+                .createTestUsers(!noTestUsers);
+
+            // Set max parallel scans if provided
+            if (maxParallelScans != null && maxParallelScans > 0) {
+                configBuilder.maxParallelScans(maxParallelScans);
+            }
+
+            UnifiedAnalyzer.AnalyzerConfig config = configBuilder.build();
 
             // Perform analysis
             UnifiedAnalyzer analyzer = new UnifiedAnalyzer(config);

@@ -192,12 +192,27 @@ public final class UnifiedAnalyzer {
         ActiveAnalysisEngine engine = null;
         try {
             // Create and configure analysis engine
-            ActiveAnalysisEngine.AnalysisConfig analysisConfig =
+            ActiveAnalysisEngine.AnalysisConfig.Builder analysisConfigBuilder =
                 ActiveAnalysisEngine.AnalysisConfig.builder()
                     .cryptoProtocol(config.getCryptoProtocol())
                     .verifySsl(config.isVerifySsl())
-                    .maxParallelScans(config.getMaxParallelScans())
-                    .build();
+                    .maxParallelScans(config.getMaxParallelScans());
+
+            // Add GOST configuration if provided
+            if (config.getGostPfxPath() != null) {
+                analysisConfigBuilder.gostPfxPath(config.getGostPfxPath());
+            }
+            if (config.getGostPfxPassword() != null) {
+                analysisConfigBuilder.gostPfxPassword(config.getGostPfxPassword());
+            }
+            analysisConfigBuilder.gostPfxResource(config.isGostPfxResource());
+
+            // Add enabled scanners if provided
+            if (config.getEnabledScanners() != null) {
+                analysisConfigBuilder.enabledScanners(config.getEnabledScanners());
+            }
+
+            ActiveAnalysisEngine.AnalysisConfig analysisConfig = analysisConfigBuilder.build();
 
             engine = new ActiveAnalysisEngine(analysisConfig);
             // Scanners are auto-registered via ServiceLoader (see META-INF/services)
@@ -228,10 +243,22 @@ public final class UnifiedAnalyzer {
                 logger.info("Attempting automatic authentication...");
 
                 // Create temporary HTTP client for authentication
-                HttpClientConfig authClientConfig = HttpClientConfig.builder()
+                HttpClientConfig.Builder authClientConfigBuilder = HttpClientConfig.builder()
                     .cryptoProtocol(config.getCryptoProtocol())
-                    .verifySsl(config.isVerifySsl())
-                    .build();
+                    .verifySsl(config.isVerifySsl());
+
+                // Add GOST configuration if provided
+                if (config.getGostPfxPath() != null) {
+                    authClientConfigBuilder.addCustomSetting("pfxPath", config.getGostPfxPath());
+                }
+                if (config.getGostPfxPassword() != null) {
+                    authClientConfigBuilder.addCustomSetting("pfxPassword", config.getGostPfxPassword());
+                }
+                if (config.isGostPfxResource()) {
+                    authClientConfigBuilder.addCustomSetting("pfxResource", "true");
+                }
+
+                HttpClientConfig authClientConfig = authClientConfigBuilder.build();
                 HttpClient authHttpClient = HttpClientFactory.createClient(authClientConfig);
 
                 AuthenticationHelper authHelper = new AuthenticationHelper(authHttpClient, baseUrl);
@@ -306,10 +333,22 @@ public final class UnifiedAnalyzer {
             }
 
             // Create HTTP client
-            HttpClientConfig clientConfig = HttpClientConfig.builder()
+            HttpClientConfig.Builder clientConfigBuilder = HttpClientConfig.builder()
                 .cryptoProtocol(config.getCryptoProtocol())
-                .verifySsl(config.isVerifySsl())
-                .build();
+                .verifySsl(config.isVerifySsl());
+
+            // Add GOST configuration if provided
+            if (config.getGostPfxPath() != null) {
+                clientConfigBuilder.addCustomSetting("pfxPath", config.getGostPfxPath());
+            }
+            if (config.getGostPfxPassword() != null) {
+                clientConfigBuilder.addCustomSetting("pfxPassword", config.getGostPfxPassword());
+            }
+            if (config.isGostPfxResource()) {
+                clientConfigBuilder.addCustomSetting("pfxResource", "true");
+            }
+
+            HttpClientConfig clientConfig = clientConfigBuilder.build();
             HttpClient httpClient = HttpClientFactory.createClient(clientConfig);
 
             // Run contract validation
@@ -392,6 +431,10 @@ public final class UnifiedAnalyzer {
         private final boolean autoAuth;
         private final boolean createTestUsers;
         private final boolean noFuzzing;
+        private final String gostPfxPath;
+        private final String gostPfxPassword;
+        private final boolean gostPfxResource;
+        private final List<String> enabledScanners;
 
         private AnalyzerConfig(Builder builder) {
             this.mode = builder.mode != null ? builder.mode : AnalysisReport.AnalysisMode.STATIC_ONLY;
@@ -406,6 +449,10 @@ public final class UnifiedAnalyzer {
             this.autoAuth = builder.autoAuth;
             this.createTestUsers = builder.createTestUsers;
             this.noFuzzing = builder.noFuzzing;
+            this.gostPfxPath = builder.gostPfxPath;
+            this.gostPfxPassword = builder.gostPfxPassword;
+            this.gostPfxResource = builder.gostPfxResource;
+            this.enabledScanners = builder.enabledScanners;
         }
 
         public static Builder builder() {
@@ -452,6 +499,22 @@ public final class UnifiedAnalyzer {
             return noFuzzing;
         }
 
+        public String getGostPfxPath() {
+            return gostPfxPath;
+        }
+
+        public String getGostPfxPassword() {
+            return gostPfxPassword;
+        }
+
+        public boolean isGostPfxResource() {
+            return gostPfxResource;
+        }
+
+        public List<String> getEnabledScanners() {
+            return enabledScanners;
+        }
+
         public static class Builder {
             private AnalysisReport.AnalysisMode mode;
             private String baseUrl;
@@ -463,6 +526,10 @@ public final class UnifiedAnalyzer {
             private boolean autoAuth = true; // Enabled by default
             private boolean createTestUsers = true; // Enabled by default
             private boolean noFuzzing = false;
+            private String gostPfxPath;
+            private String gostPfxPassword;
+            private boolean gostPfxResource;
+            private List<String> enabledScanners;
 
             public Builder mode(AnalysisReport.AnalysisMode mode) {
                 this.mode = mode;
@@ -511,6 +578,26 @@ public final class UnifiedAnalyzer {
 
             public Builder noFuzzing(boolean noFuzzing) {
                 this.noFuzzing = noFuzzing;
+                return this;
+            }
+
+            public Builder gostPfxPath(String gostPfxPath) {
+                this.gostPfxPath = gostPfxPath;
+                return this;
+            }
+
+            public Builder gostPfxPassword(String gostPfxPassword) {
+                this.gostPfxPassword = gostPfxPassword;
+                return this;
+            }
+
+            public Builder gostPfxResource(boolean gostPfxResource) {
+                this.gostPfxResource = gostPfxResource;
+                return this;
+            }
+
+            public Builder enabledScanners(List<String> enabledScanners) {
+                this.enabledScanners = enabledScanners;
                 return this;
             }
 

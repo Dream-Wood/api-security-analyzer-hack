@@ -28,39 +28,24 @@ class GostTLSContextTest {
     @Test
     @EnabledIfSystemProperty(named = "cryptopro.available", matches = "true")
     void testCreateBasicGostTLSContext() {
-        // Test basic context creation with GostTLS protocol
+        // Test basic context creation without client certificate
         GostTLSContext context = GostTLSContext.builder()
-            .protocol(GostTLSContext.GostProtocol.GOST_TLS)
             .build();
 
         assertNotNull(context);
-        assertEquals(GostTLSContext.GostProtocol.GOST_TLS, context.getProtocol());
-        assertFalse(context.isTrustAllCertificates());
+        assertNotNull(context.getSslContext());
     }
 
     @Test
     @EnabledIfSystemProperty(named = "cryptopro.available", matches = "true")
-    void testCreateGostTLSv13Context() {
-        // Test context creation with GostTLSv1.3 protocol
-        GostTLSContext context = GostTLSContext.builder()
-            .protocol(GostTLSContext.GostProtocol.GOST_TLS_V1_3)
-            .build();
-
-        assertNotNull(context);
-        assertEquals(GostTLSContext.GostProtocol.GOST_TLS_V1_3, context.getProtocol());
-    }
-
-    @Test
-    @EnabledIfSystemProperty(named = "cryptopro.available", matches = "true")
-    void testTrustAllCertificates() {
-        // Test context with certificate verification disabled
-        GostTLSContext context = GostTLSContext.builder()
-            .protocol(GostTLSContext.GostProtocol.GOST_TLS)
-            .trustAllCertificates(true)
-            .build();
-
-        assertNotNull(context);
-        assertTrue(context.isTrustAllCertificates());
+    void testCreateContextWithPfxResource() {
+        // Test context creation with PFX from resource
+        // Note: This test will fail if cert.pfx is not in resources/certs/
+        assertThrows(RuntimeException.class, () -> {
+            GostTLSContext.builder()
+                .pfxResource("certs/cert.pfx", "password")
+                .build();
+        });
     }
 
     @Test
@@ -68,12 +53,11 @@ class GostTLSContextTest {
     void testGetSSLContext() {
         // Test that we can retrieve a valid SSLContext
         GostTLSContext context = GostTLSContext.builder()
-            .protocol(GostTLSContext.GostProtocol.GOST_TLS)
             .build();
 
         SSLContext sslContext = context.getSslContext();
         assertNotNull(sslContext);
-        assertEquals("GostTLS", sslContext.getProtocol());
+        assertEquals("GostTLSv1.3", sslContext.getProtocol());
     }
 
     @Test
@@ -81,7 +65,6 @@ class GostTLSContextTest {
     void testGetSocketFactory() {
         // Test that we can retrieve a valid SSLSocketFactory
         GostTLSContext context = GostTLSContext.builder()
-            .protocol(GostTLSContext.GostProtocol.GOST_TLS)
             .build();
 
         SSLSocketFactory socketFactory = context.getSocketFactory();
@@ -90,17 +73,12 @@ class GostTLSContextTest {
 
     @Test
     @EnabledIfSystemProperty(named = "cryptopro.available", matches = "true")
-    void testAutoDiscoverKeyContainers() {
-        // Test HDImageStore auto-discovery
-        assertDoesNotThrow(() -> {
-            GostTLSContext context = GostTLSContext.builder()
-                .protocol(GostTLSContext.GostProtocol.GOST_TLS)
-                .autoDiscoverKeyContainers()
-                .build();
+    void testCloseContext() {
+        // Test that close doesn't throw exceptions
+        GostTLSContext context = GostTLSContext.builder()
+            .build();
 
-            assertNotNull(context);
-            assertNotNull(context.getKeyStore());
-        });
+        assertDoesNotThrow(() -> context.close());
     }
 
     @Test
@@ -109,7 +87,6 @@ class GostTLSContextTest {
         if (!CryptoProProvider.isAvailable()) {
             assertThrows(RuntimeException.class, () -> {
                 GostTLSContext.builder()
-                    .protocol(GostTLSContext.GostProtocol.GOST_TLS)
                     .build();
             });
         }
@@ -117,18 +94,29 @@ class GostTLSContextTest {
 
     @Test
     @EnabledIfSystemProperty(named = "cryptopro.available", matches = "true")
+    void testDisableVerification() {
+        // Test context with verification disabled
+        GostTLSContext context = GostTLSContext.builder()
+            .disableVerification(true)
+            .build();
+
+        assertNotNull(context);
+        assertNotNull(context.getSslContext());
+    }
+
+    @Test
+    @EnabledIfSystemProperty(named = "cryptopro.available", matches = "true")
     void testMultipleContexts() {
         // Test creating multiple contexts
         GostTLSContext context1 = GostTLSContext.builder()
-            .protocol(GostTLSContext.GostProtocol.GOST_TLS)
             .build();
 
         GostTLSContext context2 = GostTLSContext.builder()
-            .protocol(GostTLSContext.GostProtocol.GOST_TLS_V1_3)
+            .disableVerification(true)
             .build();
 
         assertNotNull(context1);
         assertNotNull(context2);
-        assertNotEquals(context1.getProtocol(), context2.getProtocol());
+        assertNotEquals(context1.getSslContext(), context2.getSslContext());
     }
 }

@@ -17,6 +17,7 @@
         <module>core</module>
         <module>report</module>
         <module>cli</module>
+        <module>webui</module>
     </modules>
 
     <properties>
