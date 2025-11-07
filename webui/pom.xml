@@ -108,8 +108,15 @@
                 <executions>
                     <execution>
                         <goals>
+                            <goal>build-info</goal>
                             <goal>repackage</goal>
                         </goals>
+                        <configuration>
+                            <additionalProperties>
+                                <description>${project.description}</description>
+                                <vendor>Dream-Wood Team</vendor>
+                            </additionalProperties>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -118,7 +125,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>3.5.0</version>
                 <executions>
                     <!-- Install npm dependencies -->
                     <execution>

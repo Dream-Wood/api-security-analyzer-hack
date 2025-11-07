@@ -72,6 +72,13 @@
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>cli.ApiSecurityAnalyzerCli</mainClass>
+                                    <manifestEntries>
+                                        <Implementation-Title>${project.name}</Implementation-Title>
+                                        <Implementation-Version>${project.version}</Implementation-Version>
+                                        <Implementation-Vendor>Dream-Wood Team</Implementation-Vendor>
+                                        <Build-Time>${maven.build.timestamp}</Build-Time>
+                                        <Built-By>${user.name}</Built-By>
+                                    </manifestEntries>
                                 </transformer>
                                 <!-- Merge META-INF/services files (for CryptoPro providers) -->
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>

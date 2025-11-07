@@ -1,0 +1,168 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0
+
+permissions:
+  contents: write  # Required for creating releases
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for changelog generation
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: webui/src/main/frontend/package-lock.json
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: Update POM versions
+        run: |
+          mvn versions:set -DnewVersion=${{ steps.version.outputs.VERSION }} -DgenerateBackupPoms=false
+
+      - name: Run tests
+        run: mvn test -B
+
+      - name: Build CLI
+        run: mvn package -pl core,report,cli,plugins -am -DskipTests -B
+
+      - name: Build WebUI
+        run: mvn package -pl webui -am -DskipTests -B
+
+      - name: Prepare release artifacts
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          RELEASE_DIR="release-$VERSION"
+          mkdir -p "$RELEASE_DIR"
+
+          # Copy JARs with version
+          cp cli/target/api-security-analyzer.jar "$RELEASE_DIR/api-security-analyzer-cli-$VERSION.jar"
+          cp webui/target/api-security-analyzer-webui.jar "$RELEASE_DIR/api-security-analyzer-webui-$VERSION.jar"
+
+          # Copy documentation
+          cp README.md "$RELEASE_DIR/"
+          cp LICENSE.txt "$RELEASE_DIR/"
+          cp CHANGELOG.md "$RELEASE_DIR/"
+
+          # Copy examples if exist
+          if [ -d "test-specs" ]; then
+            mkdir -p "$RELEASE_DIR/examples"
+            cp -r test-specs/* "$RELEASE_DIR/examples/"
+          fi
+
+          # Copy scanner plugins
+          mkdir -p "$RELEASE_DIR/plugins"
+          cp plugins/scanner-*.jar "$RELEASE_DIR/plugins/" 2>/dev/null || echo "No plugin JARs found"
+
+          # Create USAGE.txt
+          cat > "$RELEASE_DIR/USAGE.txt" << EOF
+          ====================================================================
+          API Security Analyzer v$VERSION
+          ====================================================================
+
+          Requirements: Java JDK 25 or higher
+
+          CLI Usage:
+            java -jar api-security-analyzer-cli-$VERSION.jar [options] <spec-file>
+
+          Web UI Usage:
+            java -jar api-security-analyzer-webui-$VERSION.jar
+            Then open: http://localhost:8080
+
+          Documentation: https://github.com/${{ github.repository }}
+          ====================================================================
+          EOF
+
+          # Generate checksums
+          cd "$RELEASE_DIR"
+          for file in *.jar; do
+            sha256sum "$file" > "$file.sha256"
+          done
+          cd ..
+
+          # Create archives
+          tar -czf "$RELEASE_DIR.tar.gz" "$RELEASE_DIR"
+          zip -r -q "$RELEASE_DIR.zip" "$RELEASE_DIR"
+
+          # Create separate plugins archive
+          tar -czf "api-security-analyzer-plugins-$VERSION.tar.gz" -C "$RELEASE_DIR" plugins
+          cd "$RELEASE_DIR" && zip -r -q "../api-security-analyzer-plugins-$VERSION.zip" plugins && cd ..
+
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          # Extract section for this version from CHANGELOG.md
+          if [ -f CHANGELOG.md ]; then
+            awk '/## \['$VERSION'\]/,/## \[/' CHANGELOG.md | sed '$d' > release_notes.md
+          else
+            echo "Release version $VERSION" > release_notes.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release v${{ steps.version.outputs.VERSION }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          files: |
+            release-${{ steps.version.outputs.VERSION }}.tar.gz
+            release-${{ steps.version.outputs.VERSION }}.zip
+            api-security-analyzer-plugins-${{ steps.version.outputs.VERSION }}.tar.gz
+            api-security-analyzer-plugins-${{ steps.version.outputs.VERSION }}.zip
+            release-${{ steps.version.outputs.VERSION }}/api-security-analyzer-cli-${{ steps.version.outputs.VERSION }}.jar
+            release-${{ steps.version.outputs.VERSION }}/api-security-analyzer-cli-${{ steps.version.outputs.VERSION }}.jar.sha256
+            release-${{ steps.version.outputs.VERSION }}/api-security-analyzer-webui-${{ steps.version.outputs.VERSION }}.jar
+            release-${{ steps.version.outputs.VERSION }}/api-security-analyzer-webui-${{ steps.version.outputs.VERSION }}.jar.sha256
+            release-${{ steps.version.outputs.VERSION }}/USAGE.txt
+            release-${{ steps.version.outputs.VERSION }}/README.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker images (optional)
+        if: success()
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+
+          # Login to GitHub Container Registry
+          # echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+          # Build CLI image
+          # docker build -f Dockerfile.cli -t ghcr.io/${{ github.repository_owner }}/api-security-analyzer:cli-$VERSION .
+          # docker tag ghcr.io/${{ github.repository_owner }}/api-security-analyzer:cli-$VERSION ghcr.io/${{ github.repository_owner }}/api-security-analyzer:cli-latest
+
+          # Build WebUI image
+          # docker build -f Dockerfile.webui -t ghcr.io/${{ github.repository_owner }}/api-security-analyzer:webui-$VERSION .
+          # docker tag ghcr.io/${{ github.repository_owner }}/api-security-analyzer:webui-$VERSION ghcr.io/${{ github.repository_owner }}/api-security-analyzer:webui-latest
+
+          # Push images
+          # docker push ghcr.io/${{ github.repository_owner }}/api-security-analyzer:cli-$VERSION
+          # docker push ghcr.io/${{ github.repository_owner }}/api-security-analyzer:cli-latest
+          # docker push ghcr.io/${{ github.repository_owner }}/api-security-analyzer:webui-$VERSION
+          # docker push ghcr.io/${{ github.repository_owner }}/api-security-analyzer:webui-latest
+
+          echo "Docker build section is commented out. Uncomment to enable Docker publishing."
