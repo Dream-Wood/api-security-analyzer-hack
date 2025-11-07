@@ -128,6 +128,11 @@ public final class StaticContractValidator implements ContractValidator {
         for (String code : responses.keySet()) {
             if (code == null) continue;
 
+            // Skip DELETE 204 - No Content doesn't require a schema
+            if ("DELETE".equalsIgnoreCase(op.getMethod()) && "204".equals(code)) {
+                continue;
+            }
+
             // Only check 2xx responses for schema presence
             if (ValidationUtils.is2xxStatusCode(code)) {
                 Object schemaNode = responses.get(code);

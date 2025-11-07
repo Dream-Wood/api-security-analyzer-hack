@@ -10,19 +10,19 @@ import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * Main entry point for API Security Analyzer Web UI.
- * Uses Spring Boot 4 - full support for Java 25.
+ * Точка входа в веб-интерфейс API Security Analyzer.
+ * Использует Spring Boot 4 с полной поддержкой Java 25.
  *
- * <p>Features:
+ * <p>Возможности:
  * <ul>
- *   <li>Interactive configuration with scanner selection</li>
- *   <li>Real-time log streaming</li>
- *   <li>Result visualization and export</li>
- *   <li>Full integration with core analysis engine</li>
+ *   <li>Интерактивная настройка с выбором сканеров</li>
+ *   <li>Потоковая передача логов в реальном времени</li>
+ *   <li>Визуализация и экспорт результатов</li>
+ *   <li>Полная интеграция с ядром анализа</li>
  * </ul>
  *
- * <p>To run: java -jar webui/target/api-security-analyzer-webui.jar
- * <br>Access at: http://localhost:8080
+ * <p>Запуск: java -jar webui/target/api-security-analyzer-webui.jar
+ * <br>Доступ: http://localhost:8080
  */
 @SpringBootApplication
 public class ApiSecurityAnalyzerWebUI {
@@ -38,7 +38,7 @@ public class ApiSecurityAnalyzerWebUI {
     }
 
     /**
-     * Configure Jackson ObjectMapper for JSON serialization.
+     * Настройка Jackson ObjectMapper для сериализации JSON.
      */
     @Bean
     public ObjectMapper objectMapper() {
@@ -50,14 +50,24 @@ public class ApiSecurityAnalyzerWebUI {
     }
 
     /**
-     * Configure CORS to allow requests from any origin.
+     * Настройка CORS для разработки с доступом с localhost.
+     * В production необходимо настроить конкретные разрешенные источники через application.properties.
      */
     @Bean
     public WebMvcConfigurer corsConfigurer() {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
-                registry.addMapping("/**").allowedOrigins("*");
+                registry.addMapping("/**")
+                        .allowedOrigins(
+                            "http://localhost:3000",
+                            "http://localhost:8080",
+                            "http://127.0.0.1:3000",
+                            "http://127.0.0.1:8080"
+                        )
+                        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                        .allowedHeaders("*")
+                        .allowCredentials(true);
             }
         };
     }

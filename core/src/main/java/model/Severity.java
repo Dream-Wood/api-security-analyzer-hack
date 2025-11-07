@@ -1,7 +1,8 @@
 package model;
 
 /**
- * Severity levels for validation findings.
+ * Уровни критичности для результатов валидации.
+ * Определяет приоритет и диапазон оценок для каждого уровня критичности.
  */
 public enum Severity {
     CRITICAL("Critical", 4, 9.0, 10.0),

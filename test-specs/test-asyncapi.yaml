@@ -1,0 +1,125 @@
+asyncapi: '2.6.0'
+info:
+  title: User Service Events
+  version: 1.0.0
+  description: Event-driven API for user management system
+
+servers:
+  production:
+    url: kafka://my-cluster:9092
+    protocol: kafka
+    description: Production Kafka cluster
+  development:
+    url: ws://localhost:8080/ws
+    protocol: ws
+    description: Development WebSocket server
+
+channels:
+  user.created:
+    description: Channel for user creation events
+    subscribe:
+      operationId: onUserCreated
+      summary: Notifies when a new user is created
+      message:
+        name: UserCreated
+        title: User Created Event
+        contentType: application/json
+        payload:
+          type: object
+          properties:
+            userId:
+              type: string
+              format: uuid
+              description: Unique user identifier
+            email:
+              type: string
+              format: email
+              description: User email address
+            username:
+              type: string
+              description: User's username
+            createdAt:
+              type: string
+              format: date-time
+              description: Timestamp of creation
+          required:
+            - userId
+            - email
+            - username
+            - createdAt
+
+  user.updated:
+    description: Channel for user update events
+    subscribe:
+      operationId: onUserUpdated
+      summary: Notifies when a user profile is updated
+      message:
+        name: UserUpdated
+        title: User Updated Event
+        contentType: application/json
+        payload:
+          type: object
+          properties:
+            userId:
+              type: string
+              format: uuid
+            updatedFields:
+              type: array
+              items:
+                type: string
+            updatedAt:
+              type: string
+              format: date-time
+          required:
+            - userId
+            - updatedAt
+
+  order.placed:
+    description: Channel for order placement events
+    publish:
+      operationId: placeOrder
+      summary: Publishes when a new order is placed
+      message:
+        name: OrderPlaced
+        title: Order Placed Event
+        contentType: application/json
+        payload:
+          type: object
+          properties:
+            orderId:
+              type: string
+              format: uuid
+            userId:
+              type: string
+              format: uuid
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  productId:
+                    type: string
+                  quantity:
+                    type: integer
+                  price:
+                    type: number
+            totalAmount:
+              type: number
+            placedAt:
+              type: string
+              format: date-time
+          required:
+            - orderId
+            - userId
+            - items
+            - totalAmount
+            - placedAt
+
+components:
+  securitySchemes:
+    apiKey:
+      type: httpApiKey
+      in: header
+      name: X-API-Key
+    userPassword:
+      type: userPassword

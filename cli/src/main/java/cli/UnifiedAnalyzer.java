@@ -10,13 +10,19 @@ import active.model.ApiEndpoint;
 import active.scanner.ScanContext;
 import active.validator.ContractValidationEngine;
 import report.AnalysisReport;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.servers.Server;
 import io.swagger.v3.oas.models.PathItem;
 import model.ParameterSpec;
+import model.SpecificationType;
 import model.ValidationFinding;
+import parser.AsyncApiLoader;
 import parser.OpenApiLoader;
 import parser.SpecNormalizer;
+import util.SpecTypeDetector;
+import validator.AsyncContractValidator;
+import validator.AsyncSecurityValidator;
 import validator.StaticContractValidator;
 
 import java.time.Instant;
@@ -27,7 +33,44 @@ import java.util.Optional;
 import java.util.logging.Logger;
 
 /**
- * Unified analyzer that coordinates both static and active analysis.
+ * Унифицированный анализатор, координирующий статический и активный анализ API.
+ * Основной класс для выполнения комплексного анализа безопасности OpenAPI/AsyncAPI спецификаций.
+ *
+ * <p>Анализатор поддерживает несколько режимов работы:
+ * <ul>
+ *   <li><b>STATIC_ONLY</b> - только статический анализ спецификации</li>
+ *   <li><b>ACTIVE_ONLY</b> - только активное тестирование (с реальными HTTP запросами)</li>
+ *   <li><b>COMBINED</b> - статический + активный анализ</li>
+ *   <li><b>CONTRACT</b> - проверка соответствия реализации контракту</li>
+ *   <li><b>FULL</b> - полный анализ (все типы тестов)</li>
+ * </ul>
+ *
+ * <p>Архитектурные особенности:
+ * <ul>
+ *   <li>Использует {@link HttpClientHelper} для создания HTTP клиентов</li>
+ *   <li>Использует {@link AuthenticationManager} для управления аутентификацией</li>
+ *   <li>Поддерживает отслеживание прогресса через {@link AnalysisProgressListener}</li>
+ *   <li>Работает с OpenAPI 3.x и AsyncAPI 2.x спецификациями</li>
+ *   <li>Поддерживает криптографию ГОСТ (CryptoPro JCSP)</li>
+ * </ul>
+ *
+ * <p>Пример использования:
+ * <pre>{@code
+ * UnifiedAnalyzer.AnalyzerConfig config = UnifiedAnalyzer.AnalyzerConfig.builder()
+ *     .mode(AnalysisReport.AnalysisMode.FULL)
+ *     .baseUrl("https://api.example.com")
+ *     .autoAuth(true)
+ *     .build();
+ *
+ * UnifiedAnalyzer analyzer = new UnifiedAnalyzer(config);
+ * AnalysisReport report = analyzer.analyze("spec.yaml");
+ * }</pre>
+ *
+ * @author API Security Analyzer Team
+ * @since 1.0
+ * @see AnalysisProgressListener
+ * @see HttpClientHelper
+ * @see AuthenticationManager
  */
 public final class UnifiedAnalyzer {
     private static final Logger logger = Logger.getLogger(UnifiedAnalyzer.class.getName());
@@ -45,27 +88,80 @@ public final class UnifiedAnalyzer {
     }
 
     /**
-     * Perform analysis based on the configured mode.
+     * Выполняет анализ на основе настроенного режима работы.
+     * Координирует выполнение статического анализа, активного тестирования и валидации контракта.
      *
-     * @param specLocation path or URL to OpenAPI specification
-     * @return unified analysis report
+     * <p>Процесс анализа включает следующие этапы:
+     * <ol>
+     *   <li>Определение типа спецификации (OpenAPI/AsyncAPI)</li>
+     *   <li>Загрузка и парсинг спецификации</li>
+     *   <li>Статический анализ (если включен в режиме)</li>
+     *   <li>Активное тестирование безопасности (если включено в режиме)</li>
+     *   <li>Валидация контракта (если включена в режиме)</li>
+     *   <li>Формирование итогового отчета</li>
+     * </ol>
+     *
+     * @param specLocation путь или URL к OpenAPI/AsyncAPI спецификации
+     * @return унифицированный отчет о результатах анализа
      */
     public AnalysisReport analyze(String specLocation) {
         Instant startTime = Instant.now();
 
         logger.info("Starting analysis in " + config.getMode() + " mode");
+        config.getProgressListener().onLog("INFO", "Starting analysis in " + config.getMode() + " mode");
+        config.getProgressListener().onPhaseChange("initialization", calculateTotalSteps(config.getMode()));
 
         AnalysisReport.Builder reportBuilder = AnalysisReport.builder()
             .specLocation(specLocation)
             .startTime(startTime)
             .mode(config.getMode());
 
-        // Load specification
+        // Detect specification type
+        config.getProgressListener().onStepComplete(1, "Detecting specification type...");
+        SpecTypeDetector.DetectionResult detection;
+        try {
+            detection = SpecTypeDetector.detectTypeWithVersion(specLocation);
+        } catch (Exception e) {
+            logger.severe("Failed to detect specification type: " + e.getMessage());
+            config.getProgressListener().onLog("ERROR", "Failed to detect specification type: " + e.getMessage());
+            return reportBuilder
+                .endTime(Instant.now())
+                .staticResult(new AnalysisReport.StaticAnalysisResult(
+                    List.of(), List.of(), "Failed to detect specification type: " + e.getMessage()))
+                .build();
+        }
+
+        if (!detection.isSuccess()) {
+            return reportBuilder
+                .endTime(Instant.now())
+                .staticResult(new AnalysisReport.StaticAnalysisResult(
+                    List.of(), List.of(), detection.getErrorMessage()))
+                .build();
+        }
+
+        SpecificationType specType = detection.getType();
+        logger.info("Detected specification type: " + specType.getDisplayName() + " " + detection.getVersion());
+        config.getProgressListener().onLog("INFO", "Detected: " + specType.getDisplayName() + " " + detection.getVersion());
+
+        // Check if AsyncAPI with non-static mode
+        if (specType == SpecificationType.ASYNCAPI) {
+            if (config.getMode() != AnalysisReport.AnalysisMode.STATIC_ONLY) {
+                logger.warning("AsyncAPI specification detected. Only static analysis is supported for AsyncAPI.");
+                logger.warning("Switching to static analysis mode...");
+                config.getProgressListener().onLog("WARNING", "AsyncAPI detected - switching to static analysis");
+                reportBuilder.mode(AnalysisReport.AnalysisMode.STATIC_ONLY);
+            }
+            return analyzeAsyncApi(specLocation, reportBuilder, startTime);
+        }
+
+        // OpenAPI analysis (existing code)
+        config.getProgressListener().onStepComplete(2, "Loading OpenAPI specification...");
         OpenApiLoader.LoadResult loadResult;
         try {
             loadResult = loader.load(specLocation);
         } catch (Exception e) {
             logger.severe("Failed to load specification: " + e.getMessage());
+            config.getProgressListener().onLog("ERROR", "Failed to load specification: " + e.getMessage());
             return reportBuilder
                 .endTime(Instant.now())
                 .staticResult(new AnalysisReport.StaticAnalysisResult(
@@ -87,15 +183,25 @@ public final class UnifiedAnalyzer {
 
         OpenAPI openAPI = loadResult.getOpenAPI();
 
+        // Extract title from spec
+        String specTitle = null;
+        if (openAPI.getInfo() != null && openAPI.getInfo().getTitle() != null) {
+            specTitle = openAPI.getInfo().getTitle();
+        }
+        reportBuilder.specTitle(specTitle);
+
         // Static analysis
         if (config.getMode() == AnalysisReport.AnalysisMode.STATIC_ONLY ||
             config.getMode() == AnalysisReport.AnalysisMode.COMBINED ||
             config.getMode() == AnalysisReport.AnalysisMode.FULL) {
 
             logger.info("Performing static analysis");
+            config.getProgressListener().onPhaseChange("static-analysis", 3);
+            config.getProgressListener().onStepComplete(1, "Running static analysis on OpenAPI spec...");
             AnalysisReport.StaticAnalysisResult staticResult = performStaticAnalysis(
                 openAPI, loadResult.getMessages());
             reportBuilder.staticResult(staticResult);
+            config.getProgressListener().onLog("INFO", "Static analysis found " + staticResult.getFindings().size() + " issues");
         }
 
         // Active analysis
@@ -110,11 +216,16 @@ public final class UnifiedAnalyzer {
                 String error = "Active analysis requires a base URL. " +
                     "Provide --base-url parameter or define servers in OpenAPI spec";
                 logger.warning(error);
+                config.getProgressListener().onLog("WARNING", error);
                 reportBuilder.activeResult(new AnalysisReport.ActiveAnalysisResult(null, error));
             } else {
                 logger.info("Performing active analysis against: " + baseUrl);
+                config.getProgressListener().onPhaseChange("active-analysis", 5);
+                config.getProgressListener().onLog("INFO", "Starting active security scans against: " + baseUrl);
                 AnalysisReport.ActiveAnalysisResult activeResult = performActiveAnalysis(openAPI, baseUrl);
                 reportBuilder.activeResult(activeResult);
+                int vulnCount = (activeResult.getReport() != null ? activeResult.getReport().getTotalVulnerabilityCount() : 0);
+                config.getProgressListener().onLog("INFO", "Active analysis found " + vulnCount + " vulnerabilities");
             }
         }
 
@@ -127,12 +238,16 @@ public final class UnifiedAnalyzer {
                 String error = "Contract validation requires a base URL. " +
                     "Provide --base-url parameter or define servers in OpenAPI spec";
                 logger.warning(error);
+                config.getProgressListener().onLog("WARNING", error);
                 reportBuilder.contractResult(new AnalysisReport.ContractAnalysisResult(null, error));
             } else {
                 logger.info("Performing contract validation against: " + baseUrl);
+                config.getProgressListener().onPhaseChange("contract-validation", 3);
+                config.getProgressListener().onLog("INFO", "Starting contract validation against: " + baseUrl);
                 AnalysisReport.ContractAnalysisResult contractResult =
                     performContractValidation(openAPI, baseUrl);
                 reportBuilder.contractResult(contractResult);
+                config.getProgressListener().onLog("INFO", "Contract validation completed");
             }
         }
 
@@ -157,8 +272,11 @@ public final class UnifiedAnalyzer {
     }
 
     /**
-     * Determine base URL for active analysis.
-     * Priority: config override > first server in spec > null
+     * Определяет базовый URL для активного анализа.
+     * Приоритет: параметр конфигурации > первый сервер в спецификации > null
+     *
+     * @param openAPI объект OpenAPI спецификации
+     * @return базовый URL для тестирования или null если URL не найден
      */
     private String determineBaseUrl(OpenAPI openAPI) {
         // First, check if user provided explicit override
@@ -212,17 +330,93 @@ public final class UnifiedAnalyzer {
                 analysisConfigBuilder.enabledScanners(config.getEnabledScanners());
             }
 
+            // Add scan intensity configuration
+            if (config.getScanIntensity() != null) {
+                analysisConfigBuilder.scanIntensity(config.getScanIntensity());
+            }
+
+            // Add custom request delay
+            if (config.getRequestDelayMs() != null) {
+                analysisConfigBuilder.requestDelayMs(config.getRequestDelayMs());
+            }
+
+            // Bridge AnalysisProgressListener to ScanProgressListener
+            analysisConfigBuilder.progressListener(new active.ScanProgressListener() {
+                private final java.util.concurrent.atomic.AtomicInteger completedScans =
+                    new java.util.concurrent.atomic.AtomicInteger(0);
+
+                @Override
+                public void onScanStart(String phase, int totalEndpoints, int totalScanners) {
+                    // If totalScanners == 1, totalEndpoints contains the exact total scan count
+                    int totalScans = (totalScanners == 1) ? totalEndpoints : (totalEndpoints * totalScanners);
+
+                    // Reset counter and set total steps based on actual scan operations
+                    completedScans.set(0);
+                    config.getProgressListener().onPhaseChange("active-scanning", totalScans);
+
+                    if (totalScanners == 1) {
+                        config.getProgressListener().onLog("INFO", String.format(
+                            "Starting scan: %d total scanner operations", totalScans));
+                    } else {
+                        config.getProgressListener().onLog("INFO", String.format(
+                            "Starting scan: %d endpoints × %d scanners = %d total scans",
+                            totalEndpoints, totalScanners, totalScans));
+                    }
+                }
+
+                @Override
+                public void onEndpointStart(int endpointIndex, int totalEndpoints, String endpoint) {
+                    config.getProgressListener().onLog("INFO",
+                        String.format("Scanning endpoint %d/%d: %s", endpointIndex + 1, totalEndpoints, endpoint));
+                }
+
+                @Override
+                public void onScannerStart(String scannerName, int scannerIndex, int totalScanners) {
+                    config.getProgressListener().onLog("DEBUG",
+                        String.format("  Running scanner %d/%d: %s", scannerIndex + 1, totalScanners, scannerName));
+                }
+
+                @Override
+                public void onScannerComplete(String scannerName, int vulnerabilityCount) {
+                    // Each scanner completion is one step
+                    int currentStep = completedScans.incrementAndGet();
+                    config.getProgressListener().onStepComplete(currentStep, null);
+
+                    if (vulnerabilityCount > 0) {
+                        config.getProgressListener().onLog("WARNING",
+                            String.format("  ⚠ %s found %d vulnerability(ies)", scannerName, vulnerabilityCount));
+                    }
+                }
+
+                @Override
+                public void onEndpointComplete(int endpointIndex, int totalEndpoints, int totalVulnerabilities) {
+                    config.getProgressListener().onLog("INFO",
+                        String.format("✓ Completed %d/%d endpoints (%d vulnerabilities so far)",
+                            endpointIndex + 1, totalEndpoints, totalVulnerabilities));
+                }
+
+                @Override
+                public void onScanComplete(int totalVulnerabilities, long durationSeconds) {
+                    config.getProgressListener().onLog("INFO",
+                        String.format("✓ Scan complete: found %d vulnerabilities in %ds",
+                            totalVulnerabilities, durationSeconds));
+                }
+            });
+
             ActiveAnalysisEngine.AnalysisConfig analysisConfig = analysisConfigBuilder.build();
 
             engine = new ActiveAnalysisEngine(analysisConfig);
             // Scanners are auto-registered via ServiceLoader (see META-INF/services)
 
             // Extract endpoints from OpenAPI spec
+            config.getProgressListener().onStepComplete(1, "Parsing API endpoints from specification...");
             List<ApiEndpoint> endpoints = extractEndpoints(openAPI);
             logger.info("Extracted " + endpoints.size() + " endpoints for active scanning");
+            config.getProgressListener().onLog("INFO", "Found " + endpoints.size() + " endpoints to scan");
 
             if (endpoints.isEmpty()) {
                 logger.warning("No endpoints found in specification");
+                config.getProgressListener().onLog("WARNING", "No endpoints found in specification");
                 return new AnalysisReport.ActiveAnalysisResult(
                     null, "No endpoints found in specification");
             }
@@ -232,81 +426,28 @@ public final class UnifiedAnalyzer {
                 .baseUrl(baseUrl)
                 .verbose(config.isVerbose());
 
-            // Try automatic authentication if no auth header provided
-            if (config.getAuthHeader() != null) {
-                String[] parts = config.getAuthHeader().split(":", 2);
-                if (parts.length == 2) {
-                    contextBuilder.addAuthHeader(parts[0].trim(), parts[1].trim());
-                    logger.info("Using provided authentication header");
-                }
-            } else if (config.isAutoAuth()) {
-                logger.info("Attempting automatic authentication...");
-
-                // Create temporary HTTP client for authentication
-                HttpClientConfig.Builder authClientConfigBuilder = HttpClientConfig.builder()
-                    .cryptoProtocol(config.getCryptoProtocol())
-                    .verifySsl(config.isVerifySsl());
-
-                // Add GOST configuration if provided
-                if (config.getGostPfxPath() != null) {
-                    authClientConfigBuilder.addCustomSetting("pfxPath", config.getGostPfxPath());
-                }
-                if (config.getGostPfxPassword() != null) {
-                    authClientConfigBuilder.addCustomSetting("pfxPassword", config.getGostPfxPassword());
-                }
-                if (config.isGostPfxResource()) {
-                    authClientConfigBuilder.addCustomSetting("pfxResource", "true");
-                }
-
-                HttpClientConfig authClientConfig = authClientConfigBuilder.build();
-                HttpClient authHttpClient = HttpClientFactory.createClient(authClientConfig);
-
-                AuthenticationHelper authHelper = new AuthenticationHelper(authHttpClient, baseUrl);
-
-                // Try to authenticate
-                Optional<AuthCredentials> primaryCreds = authHelper.attemptAutoAuth(endpoints);
-
-                if (primaryCreds.isPresent()) {
-                    AuthCredentials creds = primaryCreds.get();
-                    String authHeader = creds.getAuthorizationHeader();
-                    if (authHeader != null) {
-                        contextBuilder.addAuthHeader("Authorization", authHeader);
-                        logger.info("✓ Auto-authentication successful for user: " + creds.getUsername());
-                    }
-
-                    // Store primary credentials in shared data
-                    contextBuilder.sharedData(Map.of("primaryCredentials", creds));
-
-                    // Create additional test users for BOLA testing
-                    if (config.isCreateTestUsers()) {
-                        logger.info("Creating additional test users for BOLA testing...");
-                        List<AuthCredentials> testUsers = authHelper.createTestUsers(endpoints, 2);
-                        if (!testUsers.isEmpty()) {
-                            contextBuilder.sharedData(Map.of(
-                                "primaryCredentials", creds,
-                                "testUsers", testUsers
-                            ));
-                            logger.info("✓ Created " + testUsers.size() + " additional test users");
-                        }
-                    }
-                } else {
-                    logger.warning("⚠ Auto-authentication failed. Protected endpoints may not be testable.");
-                    logger.info("  Tip: Provide authentication via --auth-header or ensure API has registration endpoint");
-                }
-            }
+            // Setup authentication using AuthenticationManager
+            AuthenticationManager authManager = new AuthenticationManager(config);
+            authManager.setupAuthentication(contextBuilder, baseUrl, endpoints);
 
             ScanContext context = contextBuilder.build();
 
             // Execute scan
+            config.getProgressListener().onStepComplete(4, "Starting security vulnerability scans...");
+            config.getProgressListener().onLog("INFO", "Scanning " + endpoints.size() + " endpoint(s) for vulnerabilities...");
             ActiveAnalysisEngine.AnalysisReport activeReport = engine.scanEndpoints(endpoints, context);
 
             logger.info("Active analysis completed: " +
                 activeReport.getTotalVulnerabilityCount() + " vulnerabilities found");
+            config.getProgressListener().onStepComplete(5, "Security scans completed");
+            config.getProgressListener().onLog("INFO", "✓ Scanning complete - found " +
+                activeReport.getTotalVulnerabilityCount() + " vulnerabilities");
 
             return new AnalysisReport.ActiveAnalysisResult(activeReport, null);
 
         } catch (Exception e) {
             logger.severe("Active analysis failed: " + e.getMessage());
+            config.getProgressListener().onLog("ERROR", "Active analysis failed: " + e.getMessage());
             return new AnalysisReport.ActiveAnalysisResult(
                 null, "Active analysis failed: " + e.getMessage());
         } finally {
@@ -333,23 +474,7 @@ public final class UnifiedAnalyzer {
             }
 
             // Create HTTP client
-            HttpClientConfig.Builder clientConfigBuilder = HttpClientConfig.builder()
-                .cryptoProtocol(config.getCryptoProtocol())
-                .verifySsl(config.isVerifySsl());
-
-            // Add GOST configuration if provided
-            if (config.getGostPfxPath() != null) {
-                clientConfigBuilder.addCustomSetting("pfxPath", config.getGostPfxPath());
-            }
-            if (config.getGostPfxPassword() != null) {
-                clientConfigBuilder.addCustomSetting("pfxPassword", config.getGostPfxPassword());
-            }
-            if (config.isGostPfxResource()) {
-                clientConfigBuilder.addCustomSetting("pfxResource", "true");
-            }
-
-            HttpClientConfig clientConfig = clientConfigBuilder.build();
-            HttpClient httpClient = HttpClientFactory.createClient(clientConfig);
+            HttpClient httpClient = HttpClientHelper.createClient(config);
 
             // Run contract validation
             ContractValidationEngine.ContractValidationReport report =
@@ -368,7 +493,11 @@ public final class UnifiedAnalyzer {
     }
 
     /**
-     * Extract API endpoints from OpenAPI specification.
+     * Извлекает конечные точки API из OpenAPI спецификации.
+     * Преобразует пути и операции спецификации в объекты {@link ApiEndpoint}.
+     *
+     * @param openAPI объект OpenAPI спецификации
+     * @return список конечных точек API
      */
     private List<ApiEndpoint> extractEndpoints(OpenAPI openAPI) {
         List<ApiEndpoint> endpoints = new ArrayList<>();
@@ -418,7 +547,121 @@ public final class UnifiedAnalyzer {
     }
 
     /**
-     * Configuration for the unified analyzer.
+     * Анализирует AsyncAPI спецификацию (только статический анализ).
+     * AsyncAPI не поддерживает активное тестирование, поэтому выполняется только статическая валидация.
+     *
+     * @param specLocation путь или URL к AsyncAPI спецификации
+     * @param reportBuilder билдер отчета для формирования результата
+     * @param startTime время начала анализа
+     * @return отчет с результатами статического анализа AsyncAPI
+     */
+    private AnalysisReport analyzeAsyncApi(String specLocation,
+                                           AnalysisReport.Builder reportBuilder,
+                                           Instant startTime) {
+        logger.info("Analyzing AsyncAPI specification");
+
+        // Load AsyncAPI specification
+        AsyncApiLoader asyncLoader = new AsyncApiLoader();
+        AsyncApiLoader.LoadResult loadResult;
+
+        try {
+            loadResult = asyncLoader.load(specLocation);
+        } catch (Exception e) {
+            logger.severe("Failed to load AsyncAPI specification: " + e.getMessage());
+            return reportBuilder
+                .endTime(Instant.now())
+                .staticResult(new AnalysisReport.StaticAnalysisResult(
+                    List.of(), List.of(), "Failed to load AsyncAPI specification: " + e.getMessage()))
+                .build();
+        }
+
+        if (!loadResult.isSuccessful()) {
+            String error = "Failed to parse AsyncAPI specification";
+            if (!loadResult.getMessages().isEmpty()) {
+                error += ": " + String.join(", ", loadResult.getMessages());
+            }
+            return reportBuilder
+                .endTime(Instant.now())
+                .staticResult(new AnalysisReport.StaticAnalysisResult(
+                    loadResult.getMessages(), List.of(), error))
+                .build();
+        }
+
+        JsonNode asyncApiNode = loadResult.getAsyncApiNode();
+
+        // Extract title from spec
+        String specTitle = null;
+        if (asyncApiNode.has("info") && asyncApiNode.get("info").has("title")) {
+            specTitle = asyncApiNode.get("info").get("title").asText();
+        }
+        reportBuilder.specTitle(specTitle);
+
+        // Perform static analysis
+        logger.info("Performing static analysis on AsyncAPI specification");
+        AnalysisReport.StaticAnalysisResult staticResult =
+            performAsyncStaticAnalysis(asyncApiNode, loadResult.getMessages());
+        reportBuilder.staticResult(staticResult);
+
+        reportBuilder.endTime(Instant.now());
+        return reportBuilder.build();
+    }
+
+    /**
+     * Performs static analysis on AsyncAPI specification.
+     */
+    private AnalysisReport.StaticAnalysisResult performAsyncStaticAnalysis(
+            JsonNode asyncApiNode, List<String> parsingMessages) {
+        try {
+            List<ValidationFinding> allFindings = new ArrayList<>();
+
+            // Contract validation
+            AsyncContractValidator contractValidator = new AsyncContractValidator(asyncApiNode);
+            List<ValidationFinding> contractFindings = contractValidator.validate();
+            allFindings.addAll(contractFindings);
+            logger.info("Contract validation completed: " + contractFindings.size() + " findings");
+
+            // Security validation
+            AsyncSecurityValidator securityValidator = new AsyncSecurityValidator(asyncApiNode);
+            List<ValidationFinding> securityFindings = securityValidator.validate();
+            allFindings.addAll(securityFindings);
+            logger.info("Security validation completed: " + securityFindings.size() + " findings");
+
+            logger.info("AsyncAPI static analysis completed: " + allFindings.size() + " total findings");
+            return new AnalysisReport.StaticAnalysisResult(parsingMessages, allFindings, null);
+
+        } catch (Exception e) {
+            logger.severe("Static analysis failed: " + e.getMessage());
+            return new AnalysisReport.StaticAnalysisResult(
+                parsingMessages, List.of(), "Static analysis failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Calculate total steps for progress tracking based on analysis mode.
+     */
+    private static int calculateTotalSteps(AnalysisReport.AnalysisMode mode) {
+        return switch (mode) {
+            case STATIC_ONLY -> 3;  // detect, load, analyze
+            case ACTIVE_ONLY -> 7;  // detect, load, parse, auth, scan (3 scanners avg)
+            case COMBINED, CONTRACT, FULL -> 10; // detect, load, static, active, report
+        };
+    }
+
+
+    /**
+     * Конфигурация унифицированного анализатора.
+     * Содержит все параметры, необходимые для выполнения различных типов анализа.
+     *
+     * <p>Используйте {@link Builder} для создания экземпляров конфигурации:
+     * <pre>{@code
+     * AnalyzerConfig config = AnalyzerConfig.builder()
+     *     .mode(AnalysisMode.FULL)
+     *     .baseUrl("https://api.example.com")
+     *     .cryptoProtocol(HttpClient.CryptoProtocol.CRYPTOPRO_JCSP)
+     *     .gostPfxPath("cert.pfx")
+     *     .autoAuth(true)
+     *     .build();
+     * }</pre>
      */
     public static final class AnalyzerConfig {
         private final AnalysisReport.AnalysisMode mode;
@@ -435,6 +678,10 @@ public final class UnifiedAnalyzer {
         private final String gostPfxPassword;
         private final boolean gostPfxResource;
         private final List<String> enabledScanners;
+        private final String scanIntensity;
+        private final Integer requestDelayMs;
+        private final List<AuthCredentials> testUsers;
+        private final AnalysisProgressListener progressListener;
 
         private AnalyzerConfig(Builder builder) {
             this.mode = builder.mode != null ? builder.mode : AnalysisReport.AnalysisMode.STATIC_ONLY;
@@ -453,6 +700,10 @@ public final class UnifiedAnalyzer {
             this.gostPfxPassword = builder.gostPfxPassword;
             this.gostPfxResource = builder.gostPfxResource;
             this.enabledScanners = builder.enabledScanners;
+            this.scanIntensity = builder.scanIntensity;
+            this.requestDelayMs = builder.requestDelayMs;
+            this.testUsers = builder.testUsers;
+            this.progressListener = builder.progressListener != null ? builder.progressListener : AnalysisProgressListener.noOp();
         }
 
         public static Builder builder() {
@@ -515,6 +766,22 @@ public final class UnifiedAnalyzer {
             return enabledScanners;
         }
 
+        public String getScanIntensity() {
+            return scanIntensity;
+        }
+
+        public Integer getRequestDelayMs() {
+            return requestDelayMs;
+        }
+
+        public List<AuthCredentials> getTestUsers() {
+            return testUsers;
+        }
+
+        public AnalysisProgressListener getProgressListener() {
+            return progressListener;
+        }
+
         public static class Builder {
             private AnalysisReport.AnalysisMode mode;
             private String baseUrl;
@@ -530,6 +797,10 @@ public final class UnifiedAnalyzer {
             private String gostPfxPassword;
             private boolean gostPfxResource;
             private List<String> enabledScanners;
+            private String scanIntensity;
+            private Integer requestDelayMs;
+            private List<AuthCredentials> testUsers;
+            private AnalysisProgressListener progressListener;
 
             public Builder mode(AnalysisReport.AnalysisMode mode) {
                 this.mode = mode;
@@ -598,6 +869,26 @@ public final class UnifiedAnalyzer {
 
             public Builder enabledScanners(List<String> enabledScanners) {
                 this.enabledScanners = enabledScanners;
+                return this;
+            }
+
+            public Builder scanIntensity(String scanIntensity) {
+                this.scanIntensity = scanIntensity;
+                return this;
+            }
+
+            public Builder requestDelayMs(Integer requestDelayMs) {
+                this.requestDelayMs = requestDelayMs;
+                return this;
+            }
+
+            public Builder testUsers(List<AuthCredentials> testUsers) {
+                this.testUsers = testUsers;
+                return this;
+            }
+
+            public Builder progressListener(AnalysisProgressListener progressListener) {
+                this.progressListener = progressListener;
                 return this;
             }
 

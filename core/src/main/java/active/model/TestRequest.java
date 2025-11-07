@@ -3,7 +3,8 @@ package active.model;
 import java.util.*;
 
 /**
- * Represents an HTTP request to be executed during active testing.
+ * Представляет HTTP запрос, который будет выполнен во время активного тестирования.
+ * Содержит URL, метод, заголовки, параметры запроса, тело и настройки таймаута.
  */
 public final class TestRequest {
     private final String url;

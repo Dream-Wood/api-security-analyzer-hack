@@ -10,12 +10,21 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Enhanced OpenAPI specification loader with improved error handling.
+ * Улучшенный загрузчик спецификаций OpenAPI с расширенной обработкой ошибок.
+ *
+ * <p>Поддерживает:
+ * <ul>
+ *   <li>Загрузку из локальных файлов и URL</li>
+ *   <li>Полное разрешение ссылок ($ref)</li>
+ *   <li>Детальную валидацию с информативными сообщениями об ошибках</li>
+ *   <li>Предупреждения о проблемах в спецификации</li>
+ * </ul>
  */
 public final class OpenApiLoader {
 
     /**
-     * Result of loading an OpenAPI specification.
+     * Результат загрузки спецификации OpenAPI.
+     * Содержит загруженный объект OpenAPI, сообщения валидации и статус успешности.
      */
     public static final class LoadResult {
         private final OpenAPI openAPI;
@@ -54,10 +63,10 @@ public final class OpenApiLoader {
     }
 
     /**
-     * Loads an OpenAPI specification from a file path or URL.
+     * Загружает спецификацию OpenAPI из файла или URL.
      *
-     * @param location file path or URL to the specification
-     * @return load result containing OpenAPI object and any messages
+     * @param location путь к файлу или URL спецификации
+     * @return результат загрузки с объектом OpenAPI и сообщениями валидации
      */
     public LoadResult load(String location) {
         Objects.requireNonNull(location, "location must not be null");
@@ -99,7 +108,10 @@ public final class OpenApiLoader {
     }
 
     /**
-     * Checks if a location appears to be a URL.
+     * Проверяет, является ли расположение URL-адресом.
+     *
+     * @param location проверяемое расположение
+     * @return true, если это URL (начинается с http:// или https://)
      */
     public static boolean isUrl(String location) {
         if (location == null) {

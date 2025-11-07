@@ -4,7 +4,8 @@ import java.time.Duration;
 import java.util.*;
 
 /**
- * Configuration for HTTP clients.
+ * Конфигурация для HTTP клиентов.
+ * Содержит настройки таймаутов, SSL, заголовков и криптографических протоколов.
  */
 public final class HttpClientConfig {
     private final HttpClient.CryptoProtocol cryptoProtocol;

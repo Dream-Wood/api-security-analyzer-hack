@@ -5,7 +5,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.util.*;
 
 /**
- * Enhanced representation of an API operation with comprehensive metadata.
+ * Расширенное представление операции API с полными метаданными.
+ *
+ * <p>Содержит всю информацию об операции API, включая:
+ * <ul>
+ *   <li>Путь и HTTP-метод</li>
+ *   <li>Схемы запросов и ответов</li>
+ *   <li>Параметры (path, query, header, cookie)</li>
+ *   <li>Требования безопасности и схемы аутентификации</li>
+ *   <li>Теги и статус устаревания</li>
+ * </ul>
  */
 public final class OperationSpec {
     private final String path;

@@ -5,7 +5,8 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Represents authentication credentials for a test user.
+ * Представляет учетные данные аутентификации для тестового пользователя.
+ * Содержит информацию об имени пользователя, пароле, токенах и дополнительных заголовках.
  */
 public final class AuthCredentials {
     private final String username;
@@ -55,7 +56,9 @@ public final class AuthCredentials {
     }
 
     /**
-     * Get authorization header value (Bearer token or custom format).
+     * Получить значение заголовка авторизации (Bearer токен или пользовательский формат).
+     *
+     * @return значение заголовка Authorization или null, если токен отсутствует
      */
     public String getAuthorizationHeader() {
         if (token != null) {

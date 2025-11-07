@@ -4,55 +4,61 @@ import active.model.TestRequest;
 import active.model.TestResponse;
 
 /**
- * Interface for HTTP client implementations supporting different cryptographic protocols.
- * Implementations may support standard SSL/TLS, CryptoPro JCSP, or other custom protocols.
+ * Интерфейс для реализаций HTTP-клиентов, поддерживающих различные криптографические протоколы.
+ * Реализации могут поддерживать стандартный SSL/TLS, CryptoPro JCSP или другие пользовательские протоколы.
+ *
+ * <p>Основные реализации:
+ * <ul>
+ *   <li>{@link StandardHttpClient} - стандартный TLS/SSL клиент</li>
+ *   <li>{@link CryptoProHttpClient} - клиент с поддержкой ГОСТ криптографии</li>
+ * </ul>
  */
 public interface HttpClient {
 
     /**
-     * Execute an HTTP request and return the response.
+     * Выполняет HTTP-запрос и возвращает ответ.
      *
-     * @param request the test request to execute
-     * @return the test response
+     * @param request тестовый запрос для выполнения
+     * @return тестовый ответ
      */
     TestResponse execute(TestRequest request);
 
     /**
-     * Get the cryptographic protocol type supported by this client.
+     * Возвращает тип криптографического протокола, поддерживаемого этим клиентом.
      *
-     * @return the crypto protocol type
+     * @return тип криптографического протокола
      */
     CryptoProtocol getCryptoProtocol();
 
     /**
-     * Check if this client supports the given URL scheme.
+     * Проверяет, поддерживает ли этот клиент указанную схему URL.
      *
-     * @param url the URL to check
-     * @return true if supported, false otherwise
+     * @param url URL для проверки
+     * @return true, если поддерживается, иначе false
      */
     boolean supports(String url);
 
     /**
-     * Close and release resources held by this client.
+     * Закрывает клиент и освобождает удерживаемые ресурсы.
      */
     void close();
 
     /**
-     * Supported cryptographic protocols.
+     * Поддерживаемые криптографические протоколы.
      */
     enum CryptoProtocol {
         /**
-         * Standard SSL/TLS (e.g., TLS 1.2, TLS 1.3)
+         * Стандартный SSL/TLS (например, TLS 1.2, TLS 1.3)
          */
         STANDARD_TLS("Standard TLS"),
 
         /**
-         * Russian CryptoPro JCSP (GOST cryptography)
+         * Российский CryptoPro JCSP (криптография ГОСТ)
          */
         CRYPTOPRO_JCSP("CryptoPro JCSP"),
 
         /**
-         * Custom cryptographic protocol
+         * Пользовательский криптографический протокол
          */
         CUSTOM("Custom");
 

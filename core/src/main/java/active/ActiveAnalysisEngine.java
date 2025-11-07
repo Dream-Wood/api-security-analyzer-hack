@@ -15,8 +15,17 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
- * Main orchestrator for active API security analysis.
- * This engine coordinates vulnerability scanners, HTTP clients, and reporting.
+ * Главный оркестратор для активного анализа безопасности API.
+ * Этот движок координирует работу сканеров уязвимостей, HTTP-клиентов и формирование отчетов.
+ *
+ * <p>Основные возможности:
+ * <ul>
+ *   <li>Автоматическое обнаружение и регистрация сканеров через ServiceLoader</li>
+ *   <li>Поддержка различных криптографических протоколов (TLS, CryptoPro GOST)</li>
+ *   <li>Параллельное сканирование эндпоинтов с настраиваемой интенсивностью</li>
+ *   <li>Отслеживание прогресса сканирования через ScanProgressListener</li>
+ *   <li>Гибкая конфигурация сканеров и задержек между запросами</li>
+ * </ul>
  */
 public final class ActiveAnalysisEngine {
     private static final Logger logger = Logger.getLogger(ActiveAnalysisEngine.class.getName());
@@ -56,20 +65,47 @@ public final class ActiveAnalysisEngine {
         int scannersRegistered = ScannerAutoDiscovery.discoverAndRegister(scannerRegistry);
         logger.info("Auto-registered " + scannersRegistered + " scanner(s) via ServiceLoader");
 
-        // Configure scanner enabled/disabled status based on configuration
+        // Configure scanner enabled/disabled status and scan intensity
+        ScanIntensity intensity = analysisConfig.getScanIntensity() != null
+            ? ScanIntensity.fromString(analysisConfig.getScanIntensity())
+            : ScanIntensity.MEDIUM;
+
+        logger.info("Scan intensity: " + intensity + " (delay: " + intensity.getRequestDelayMs() + "ms)");
+
         if (analysisConfig.getEnabledScanners() != null && !analysisConfig.getEnabledScanners().isEmpty()) {
             Set<String> enabledSet = new HashSet<>(analysisConfig.getEnabledScanners());
             for (VulnerabilityScanner scanner : scannerRegistry.getAllScanners()) {
                 boolean shouldEnable = enabledSet.contains(scanner.getId());
-                ScannerConfig newConfig = ScannerConfig.builder()
+                ScannerConfig.Builder configBuilder = ScannerConfig.builder()
                     .enabled(shouldEnable)
                     .maxTestsPerEndpoint(scanner.getConfig().getMaxTestsPerEndpoint())
                     .timeoutSeconds(scanner.getConfig().getTimeoutSeconds())
-                    .build();
-                scanner.setConfig(newConfig);
+                    .intensity(intensity);
+
+                // Apply custom request delay if provided (overrides intensity default)
+                if (analysisConfig.getRequestDelayMs() != null) {
+                    configBuilder.requestDelayMs(analysisConfig.getRequestDelayMs());
+                }
+
+                scanner.setConfig(configBuilder.build());
             }
             logger.info("Configured scanner selection: " + enabledSet.size() + " enabled out of " + scannersRegistered);
         } else {
+            // Apply intensity to all scanners
+            for (VulnerabilityScanner scanner : scannerRegistry.getAllScanners()) {
+                ScannerConfig.Builder configBuilder = ScannerConfig.builder()
+                    .enabled(true)
+                    .maxTestsPerEndpoint(scanner.getConfig().getMaxTestsPerEndpoint())
+                    .timeoutSeconds(scanner.getConfig().getTimeoutSeconds())
+                    .intensity(intensity);
+
+                // Apply custom request delay if provided (overrides intensity default)
+                if (analysisConfig.getRequestDelayMs() != null) {
+                    configBuilder.requestDelayMs(analysisConfig.getRequestDelayMs());
+                }
+
+                scanner.setConfig(configBuilder.build());
+            }
             logger.info("All scanners enabled by default");
         }
 
@@ -83,18 +119,38 @@ public final class ActiveAnalysisEngine {
     }
 
     /**
-     * Register a vulnerability scanner.
+     * Регистрирует сканер уязвимостей в реестре.
+     *
+     * @param scanner сканер уязвимостей для регистрации
      */
     public void registerScanner(VulnerabilityScanner scanner) {
         scannerRegistry.register(scanner);
     }
 
     /**
-     * Scan a single endpoint with all applicable scanners.
+     * Сканирует один эндпоинт всеми применимыми сканерами.
+     * Вспомогательный метод для последовательного сканирования с отслеживанием прогресса.
+     *
+     * @param endpoint эндпоинт для сканирования
+     * @param context контекст сканирования
+     * @param endpointIndex индекс текущего эндпоинта
+     * @param totalEndpoints общее количество эндпоинтов
+     * @param totalVulns счетчик общего количества найденных уязвимостей
+     * @return результат анализа эндпоинта
      */
-    public EndpointAnalysisResult scanEndpoint(ApiEndpoint endpoint, ScanContext context) {
+    private EndpointAnalysisResult scanEndpointWithProgress(
+            ApiEndpoint endpoint,
+            ScanContext context,
+            int endpointIndex,
+            int totalEndpoints,
+            java.util.concurrent.atomic.AtomicInteger totalVulns) {
+
         Instant startTime = Instant.now();
         logger.info("Scanning endpoint: " + endpoint);
+
+        // Notify start of endpoint scan
+        analysisConfig.getProgressListener().onEndpointStart(
+            endpointIndex, totalEndpoints, endpoint.toString());
 
         List<VulnerabilityScanner> applicableScanners = scannerRegistry.getEnabledScanners()
             .stream()
@@ -103,6 +159,8 @@ public final class ActiveAnalysisEngine {
 
         if (applicableScanners.isEmpty()) {
             logger.fine("No applicable scanners for endpoint: " + endpoint);
+            analysisConfig.getProgressListener().onEndpointComplete(
+                endpointIndex, totalEndpoints, totalVulns.get());
             return new EndpointAnalysisResult(
                 endpoint,
                 Collections.emptyList(),
@@ -114,20 +172,38 @@ public final class ActiveAnalysisEngine {
         logger.info("Running " + applicableScanners.size() + " scanner(s) on: " + endpoint);
 
         List<ScanResult> scanResults = new ArrayList<>();
+        int scannerIndex = 0;
 
         for (VulnerabilityScanner scanner : applicableScanners) {
             try {
+                // Notify scanner start
+                analysisConfig.getProgressListener().onScannerStart(
+                    scanner.getName(), scannerIndex, applicableScanners.size());
+
                 ScanResult result = scanner.scan(endpoint, httpClient, context);
                 scanResults.add(result);
 
-                if (result.hasVulnerabilities()) {
-                    logger.warning("Found " + result.getVulnerabilityCount() +
+                int vulnCount = result.getVulnerabilityCount();
+                if (vulnCount > 0) {
+                    totalVulns.addAndGet(vulnCount);
+                    logger.warning("Found " + vulnCount +
                                  " vulnerabilities with " + scanner.getName());
                 }
+
+                // Notify scanner complete
+                analysisConfig.getProgressListener().onScannerComplete(
+                    scanner.getName(), vulnCount);
+
             } catch (Exception e) {
                 logger.warning("Scanner " + scanner.getName() + " failed: " + e.getMessage());
+                analysisConfig.getProgressListener().onScannerComplete(scanner.getName(), 0);
             }
+            scannerIndex++;
         }
+
+        // Notify endpoint complete
+        analysisConfig.getProgressListener().onEndpointComplete(
+            endpointIndex, totalEndpoints, totalVulns.get());
 
         return new EndpointAnalysisResult(
             endpoint,
@@ -138,40 +214,93 @@ public final class ActiveAnalysisEngine {
     }
 
     /**
-     * Scan multiple endpoints in parallel.
+     * Сканирует один эндпоинт всеми применимыми сканерами.
+     *
+     * @param endpoint эндпоинт для сканирования
+     * @param context контекст сканирования
+     * @return результат анализа эндпоинта
+     */
+    public EndpointAnalysisResult scanEndpoint(ApiEndpoint endpoint, ScanContext context) {
+        java.util.concurrent.atomic.AtomicInteger totalVulns = new java.util.concurrent.atomic.AtomicInteger(0);
+        return scanEndpointWithProgress(endpoint, context, 0, 1, totalVulns);
+    }
+
+    /**
+     * Сканирует несколько эндпоинтов параллельно.
+     * Использует пул потоков для одновременного сканирования эндпоинтов с отслеживанием прогресса.
+     *
+     * @param endpoints список эндпоинтов для сканирования
+     * @param context контекст сканирования
+     * @return полный отчет об анализе всех эндпоинтов
      */
     public AnalysisReport scanEndpoints(List<ApiEndpoint> endpoints, ScanContext context) {
         Instant startTime = Instant.now();
-        logger.info("Starting active analysis of " + endpoints.size() + " endpoints");
+        int totalEndpoints = endpoints.size();
+        logger.info("Starting active analysis of " + totalEndpoints + " endpoints");
 
-        List<Future<EndpointAnalysisResult>> futures = endpoints.stream()
-            .map(endpoint -> executorService.submit(() -> scanEndpoint(endpoint, context)))
-            .toList();
+        // Calculate actual number of applicable scanners across all endpoints
+        int totalApplicableScans = 0;
+        for (ApiEndpoint endpoint : endpoints) {
+            long applicableCount = scannerRegistry.getEnabledScanners().stream()
+                .filter(scanner -> scanner.isApplicable(endpoint))
+                .count();
+            totalApplicableScans += applicableCount;
+        }
+
+        logger.info("Total applicable scans: " + totalApplicableScans +
+                   " across " + totalEndpoints + " endpoint(s)");
+
+        // Notify scan start with exact total count
+        // Pass totalApplicableScans as first param, 1 as second to signal exact count mode
+        analysisConfig.getProgressListener().onScanStart(
+            "scanning", totalApplicableScans, 1);
+
+        // Use AtomicInteger to track total vulnerabilities across all threads
+        java.util.concurrent.atomic.AtomicInteger totalVulns = new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.concurrent.atomic.AtomicInteger completedEndpoints = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        List<Future<EndpointAnalysisResult>> futures = new ArrayList<>();
+        for (int i = 0; i < endpoints.size(); i++) {
+            final int index = i;
+            final ApiEndpoint endpoint = endpoints.get(i);
+            futures.add(executorService.submit(() ->
+                scanEndpointWithProgress(endpoint, context, index, totalEndpoints, totalVulns)
+            ));
+        }
 
         List<EndpointAnalysisResult> results = new ArrayList<>();
         for (Future<EndpointAnalysisResult> future : futures) {
             try {
                 results.add(future.get());
+                completedEndpoints.incrementAndGet();
             } catch (Exception e) {
                 logger.warning("Endpoint scan failed: " + e.getMessage());
             }
         }
 
         Instant endTime = Instant.now();
-        logger.info("Active analysis completed in " + Duration.between(startTime, endTime).toSeconds() + "s");
+        long durationSeconds = Duration.between(startTime, endTime).toSeconds();
+        logger.info("Active analysis completed in " + durationSeconds + "s");
+
+        // Notify scan complete
+        analysisConfig.getProgressListener().onScanComplete(
+            totalVulns.get(), durationSeconds);
 
         return new AnalysisReport(results, startTime, endTime);
     }
 
     /**
-     * Get the scanner registry.
+     * Возвращает реестр сканеров.
+     *
+     * @return реестр сканеров
      */
     public ScannerRegistry getScannerRegistry() {
         return scannerRegistry;
     }
 
     /**
-     * Shutdown the engine and release resources.
+     * Останавливает движок и освобождает ресурсы.
+     * Завершает работу пула потоков и закрывает HTTP-клиент.
      */
     public void shutdown() {
         logger.info("Shutting down Active Analysis Engine");
@@ -190,7 +319,8 @@ public final class ActiveAnalysisEngine {
     }
 
     /**
-     * Configuration for the active analysis engine.
+     * Конфигурация для движка активного анализа.
+     * Содержит настройки криптографических протоколов, параллелизма, сканеров и отслеживания прогресса.
      */
     public static final class AnalysisConfig {
         private final HttpClient.CryptoProtocol cryptoProtocol;
@@ -200,6 +330,9 @@ public final class ActiveAnalysisEngine {
         private final String gostPfxPassword;
         private final boolean gostPfxResource;
         private final List<String> enabledScanners;
+        private final String scanIntensity;
+        private final Integer requestDelayMs;
+        private final ScanProgressListener progressListener;
 
         private AnalysisConfig(Builder builder) {
             this.cryptoProtocol = builder.cryptoProtocol != null
@@ -213,6 +346,11 @@ public final class ActiveAnalysisEngine {
             this.gostPfxPassword = builder.gostPfxPassword;
             this.gostPfxResource = builder.gostPfxResource;
             this.enabledScanners = builder.enabledScanners;
+            this.scanIntensity = builder.scanIntensity;
+            this.requestDelayMs = builder.requestDelayMs;
+            this.progressListener = builder.progressListener != null
+                ? builder.progressListener
+                : ScanProgressListener.noOp();
         }
 
         public static Builder builder() {
@@ -247,6 +385,18 @@ public final class ActiveAnalysisEngine {
             return enabledScanners;
         }
 
+        public String getScanIntensity() {
+            return scanIntensity;
+        }
+
+        public Integer getRequestDelayMs() {
+            return requestDelayMs;
+        }
+
+        public ScanProgressListener getProgressListener() {
+            return progressListener;
+        }
+
         public static class Builder {
             private HttpClient.CryptoProtocol cryptoProtocol;
             private boolean verifySsl = true;
@@ -255,6 +405,9 @@ public final class ActiveAnalysisEngine {
             private String gostPfxPassword;
             private boolean gostPfxResource;
             private List<String> enabledScanners;
+            private String scanIntensity;
+            private Integer requestDelayMs;
+            private ScanProgressListener progressListener;
 
             public Builder cryptoProtocol(HttpClient.CryptoProtocol cryptoProtocol) {
                 this.cryptoProtocol = cryptoProtocol;
@@ -291,6 +444,21 @@ public final class ActiveAnalysisEngine {
                 return this;
             }
 
+            public Builder scanIntensity(String scanIntensity) {
+                this.scanIntensity = scanIntensity;
+                return this;
+            }
+
+            public Builder requestDelayMs(Integer requestDelayMs) {
+                this.requestDelayMs = requestDelayMs;
+                return this;
+            }
+
+            public Builder progressListener(ScanProgressListener progressListener) {
+                this.progressListener = progressListener;
+                return this;
+            }
+
             public AnalysisConfig build() {
                 return new AnalysisConfig(this);
             }
@@ -298,7 +466,13 @@ public final class ActiveAnalysisEngine {
     }
 
     /**
-     * Result of analyzing a single endpoint.
+     * Результат анализа одного эндпоинта.
+     * Содержит эндпоинт, результаты сканирования и временные метки.
+     *
+     * @param endpoint проверенный эндпоинт
+     * @param scanResults результаты всех примененных сканеров
+     * @param startTime время начала анализа
+     * @param endTime время окончания анализа
      */
     public record EndpointAnalysisResult(
         ApiEndpoint endpoint,
@@ -322,7 +496,9 @@ public final class ActiveAnalysisEngine {
     }
 
     /**
-     * Complete analysis report for all scanned endpoints.
+     * Полный отчет об анализе всех просканированных эндпоинтов.
+     * Предоставляет агрегированную статистику, включая количество уязвимостей,
+     * распределение по типам и уровням критичности.
      */
     public static final class AnalysisReport {
         private final List<EndpointAnalysisResult> endpointResults;

@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # Web UI сервис - интерактивный веб-интерфейс
+  webui:
+    build:
+      context: .
+      dockerfile: Dockerfile.webui
+    image: api-security-analyzer:webui
+    container_name: api-analyzer-webui
+    ports:
+      - "8080:8080"
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx4g
+      - SERVER_PORT=8080
+      - SPRING_PROFILES_ACTIVE=production
+    volumes:
+      # Монтирование директорий для загруженных файлов и отчетов
+      - ./uploads:/uploads
+      - ./reports:/reports
+      - ./specs:/specs:ro
+      # Опционально: монтирование сертификатов для GOST
+      # - ./certs:/certs:ro
+    networks:
+      - analyzer-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "com.api-analyzer.service=webui"
+      - "com.api-analyzer.description=Web interface for API security analysis"
+
+  # CLI сервис - для запуска анализа через командную строку
+  # Uncomment для использования CLI в контейнере
+  # cli:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.cli
+  #   image: api-security-analyzer:cli
+  #   container_name: api-analyzer-cli
+  #   environment:
+  #     - JAVA_OPTS=-Xms256m -Xmx2g
+  #   volumes:
+  #     - ./specs:/specs:ro
+  #     - ./reports:/reports
+  #     - ./certs:/certs:ro
+  #   networks:
+  #     - analyzer-network
+  #   # Пример команды для запуска анализа
+  #   command: ["-m", "full", "-u", "https://api.example.com", "-f", "json", "-o", "/reports/report.json", "/specs/openapi.yaml"]
+  #   profiles:
+  #     - cli
+
+networks:
+  analyzer-network:
+    driver: bridge
+    name: api-analyzer-network
+
+volumes:
+  # Именованные volumes для постоянного хранения данных
+  uploads:
+    driver: local
+  reports:
+    driver: local
+
+# Примеры использования:
+#
+# 1. Запуск только WebUI:
+#    docker-compose up -d
+#
+# 2. Запуск WebUI и просмотр логов:
+#    docker-compose up
+#
+# 3. Запуск CLI сервиса:
+#    docker-compose --profile cli up cli
+#
+# 4. Остановка всех сервисов:
+#    docker-compose down
+#
+# 5. Пересборка образов:
+#    docker-compose build
+#
+# 6. Очистка volumes:
+#    docker-compose down -v

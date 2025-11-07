@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import type { ScannerInfo, AnalysisRequest, AnalysisMode, CryptoProtocol } from '../types';
+import type { ScannerInfo, AnalysisRequest, AnalysisMode, CryptoProtocol, ScanIntensity, UserCredentials } from '../types';
 import './ConfigurationPanel.css';
 
 interface ConfigurationPanelProps {
@@ -30,10 +30,21 @@ export const ConfigurationPanel: React.FC<ConfigurationPanelProps> = ({
   const [maxParallelScans, setMaxParallelScans] = useState<number>(4);
   const [selectedScanners, setSelectedScanners] = useState<Set<string>>(new Set());
 
+  // Scan intensity configuration
+  const [scanIntensity, setScanIntensity] = useState<ScanIntensity>('medium');
+  const [requestDelayMs, setRequestDelayMs] = useState<number | ''>('');
+
+  // Test users configuration
+  const [testUsers, setTestUsers] = useState<UserCredentials[]>([]);
+
   // GOST TLS state
   const [gostPfxPath, setGostPfxPath] = useState('');
   const [gostPfxPassword, setGostPfxPassword] = useState('');
   const [showGostPassword, setShowGostPassword] = useState(false);
+
+  // Spec type detection
+  const [specType, setSpecType] = useState<'unknown' | 'openapi' | 'asyncapi'>('unknown');
+  const [specTypeMessage, setSpecTypeMessage] = useState<string>('');
 
   useEffect(() => {
     loadScanners();
@@ -72,25 +83,95 @@ export const ConfigurationPanel: React.FC<ConfigurationPanelProps> = ({
     setSelectedScanners(new Set());
   };
 
-  const handleFileSelect = (callback: (path: string) => void) => {
+  const handleFileUpload = async (
+    callback: (path: string) => void,
+    acceptTypes: string = '.yaml,.yml,.json',
+    shouldDetectSpecType: boolean = true
+  ) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.onchange = (e) => {
+    input.accept = acceptTypes;
+    input.onchange = async (e) => {
       const target = e.target as HTMLInputElement;
       if (target.files && target.files[0]) {
-        // In browser environment, we can only get the filename, not the full path
-        // User will need to manually edit to provide the full server-side path if needed
         const file = target.files[0];
-        // Try to use webkitRelativePath or name as fallback
-        const filePath = (file as any).webkitRelativePath || file.name;
-        callback(filePath);
+
+        try {
+          // Upload file to server
+          const result = await api.uploadFile(file);
+
+          if (result.error) {
+            alert(`Failed to upload file: ${result.error}`);
+            return;
+          }
+
+          // Set the uploaded file path
+          callback(result.path);
+
+          // Detect spec type only for specification files
+          if (shouldDetectSpecType) {
+            detectSpecType(result.path);
+          }
+
+          console.log(`File uploaded: ${result.filename} (${result.size} bytes) -> ${result.path}`);
+        } catch (err) {
+          console.error('Upload error:', err);
+          alert('Failed to upload file. Please try again.');
+        }
       }
     };
     input.click();
   };
 
+  const detectSpecType = async (path: string) => {
+    if (!path || path.trim() === '') {
+      setSpecType('unknown');
+      setSpecTypeMessage('');
+      return;
+    }
+
+    try {
+      const result = await api.detectSpecType(path);
+      setSpecType(result.type);
+
+      if (result.type === 'asyncapi') {
+        setSpecTypeMessage(`${result.displayName || 'AsyncAPI'} detected - only static analysis is available`);
+        // Force static mode for AsyncAPI
+        if (mode !== 'static') {
+          setMode('static');
+        }
+      } else if (result.type === 'openapi') {
+        setSpecTypeMessage(`${result.displayName || 'OpenAPI'} ${result.version || ''} detected`);
+      } else {
+        setSpecTypeMessage('');
+      }
+    } catch (err) {
+      console.error('Failed to detect spec type:', err);
+      setSpecType('unknown');
+      setSpecTypeMessage('');
+    }
+  };
+
   const needsScanner = (analysisMode: AnalysisMode): boolean => {
     return analysisMode !== 'static' && analysisMode !== 'contract';
+  };
+
+  const needsActiveSettings = (analysisMode: AnalysisMode): boolean => {
+    return analysisMode !== 'static';
+  };
+
+  const handleAddTestUser = () => {
+    setTestUsers([...testUsers, { username: '', password: '', role: 'user' }]);
+  };
+
+  const handleRemoveTestUser = (index: number) => {
+    setTestUsers(testUsers.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateTestUser = (index: number, field: keyof UserCredentials, value: string) => {
+    const updated = [...testUsers];
+    updated[index] = { ...updated[index], [field]: value };
+    setTestUsers(updated);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -111,7 +192,10 @@ export const ConfigurationPanel: React.FC<ConfigurationPanelProps> = ({
       autoAuth,
       createTestUsers,
       maxParallelScans,
-      enabledScanners: Array.from(selectedScanners)
+      enabledScanners: Array.from(selectedScanners),
+      scanIntensity: needsActiveSettings(mode) ? scanIntensity : undefined,
+      requestDelayMs: needsActiveSettings(mode) && requestDelayMs !== '' ? requestDelayMs : undefined,
+      testUsers: needsActiveSettings(mode) && testUsers.length > 0 ? testUsers : undefined
     };
 
     onStartAnalysis(request);
@@ -136,27 +220,45 @@ export const ConfigurationPanel: React.FC<ConfigurationPanelProps> = ({
           <h3>Basic Settings</h3>
 
           <div className="form-group">
-            <label>OpenAPI Specification *</label>
+            <label>OpenAPI/AsyncAPI Specification *</label>
             <div className="input-with-button">
               <input
                 type="text"
                 value={specLocation}
-                onChange={(e) => setSpecLocation(e.target.value)}
-                placeholder="Path or URL to OpenAPI spec"
+                onChange={(e) => {
+                  setSpecLocation(e.target.value);
+                }}
+                onBlur={() => detectSpecType(specLocation)}
+                placeholder="Enter path/URL or click ⬆️ to upload file"
                 required
                 disabled={isAnalyzing}
               />
               <button
                 type="button"
                 className="file-picker-button"
-                onClick={() => handleFileSelect(setSpecLocation)}
+                onClick={() => handleFileUpload(setSpecLocation)}
                 disabled={isAnalyzing}
-                title="Browse for file"
+                title="Upload file to server"
               >
-                📁
+                ⬆️
               </button>
             </div>
-            <small>Path to OpenAPI specification file (YAML/JSON) or URL</small>
+            <small>
+              Enter full path (absolute or relative from project root) or URL, or click ⬆️ to upload a file from your computer
+            </small>
+            {specTypeMessage && (
+              <div style={{
+                padding: '8px 12px',
+                backgroundColor: specType === 'asyncapi' ? '#fef3c7' : '#dbeafe',
+                color: specType === 'asyncapi' ? '#92400e' : '#1e3a8a',
+                borderRadius: '4px',
+                fontSize: '0.875rem',
+                marginTop: '8px',
+                border: `1px solid ${specType === 'asyncapi' ? '#fbbf24' : '#60a5fa'}`
+              }}>
+                {specType === 'asyncapi' && '⚠️ '}{specTypeMessage}
+              </div>
+            )}
           </div>
 
           <div className="form-group">
@@ -164,14 +266,27 @@ export const ConfigurationPanel: React.FC<ConfigurationPanelProps> = ({
             <select
               value={mode}
               onChange={(e) => setMode(e.target.value as AnalysisMode)}
-              disabled={isAnalyzing}
+              disabled={isAnalyzing || specType === 'asyncapi'}
             >
               <option value="static">Static Only</option>
-              <option value="active">Active Only</option>
-              <option value="both">Combined (Static + Active)</option>
-              <option value="contract">Contract Validation</option>
-              <option value="full">Full (All)</option>
+              <option value="active" disabled={specType === 'asyncapi'}>
+                Active Only{specType === 'asyncapi' ? ' (Not available for AsyncAPI)' : ''}
+              </option>
+              <option value="both" disabled={specType === 'asyncapi'}>
+                Combined{specType === 'asyncapi' ? ' (Not available for AsyncAPI)' : ''}
+              </option>
+              <option value="contract" disabled={specType === 'asyncapi'}>
+                Contract{specType === 'asyncapi' ? ' (Not available for AsyncAPI)' : ''}
+              </option>
+              <option value="full" disabled={specType === 'asyncapi'}>
+                Full{specType === 'asyncapi' ? ' (Not available for AsyncAPI)' : ''}
+              </option>
             </select>
+            {specType === 'asyncapi' && (
+              <small style={{ color: '#92400e', fontStyle: 'italic' }}>
+                AsyncAPI only supports static analysis
+              </small>
+            )}
           </div>
 
           {mode !== 'static' && (
@@ -226,20 +341,22 @@ export const ConfigurationPanel: React.FC<ConfigurationPanelProps> = ({
                     type="text"
                     value={gostPfxPath}
                     onChange={(e) => setGostPfxPath(e.target.value)}
-                    placeholder="Path to PFX certificate"
+                    placeholder="Enter path or click ⬆️ to upload certificate"
                     disabled={isAnalyzing}
                   />
                   <button
                     type="button"
                     className="file-picker-button"
-                    onClick={() => handleFileSelect(setGostPfxPath)}
+                    onClick={() => handleFileUpload(setGostPfxPath, '.pfx,.p12', false)}
                     disabled={isAnalyzing}
-                    title="Browse for certificate"
+                    title="Upload certificate to server"
                   >
-                    📁
+                    ⬆️
                   </button>
                 </div>
-                <small>Path to GOST PFX certificate file</small>
+                <small>
+                  Enter full path (absolute or relative from project root), or click ⬆️ to upload certificate from your computer
+                </small>
               </div>
 
               <div className="form-group">
@@ -334,6 +451,139 @@ export const ConfigurationPanel: React.FC<ConfigurationPanelProps> = ({
             <label htmlFor="noFuzzing">Disable Fuzzing</label>
           </div>
         </div>
+
+        {/* Active Scan Settings */}
+        {needsActiveSettings(mode) && (
+          <div className="config-section">
+            <h3>Active Scan Settings</h3>
+
+            <div className="form-group">
+              <label>Scan Intensity</label>
+              <select
+                value={scanIntensity}
+                onChange={(e) => setScanIntensity(e.target.value as ScanIntensity)}
+                disabled={isAnalyzing}
+              >
+                <option value="low">Low (500ms delay) - Production Safe</option>
+                <option value="medium">Medium (200ms delay) - Default</option>
+                <option value="high">High (100ms delay) - Testing</option>
+                <option value="aggressive">Aggressive (50ms delay) - Dev Only ⚠️</option>
+              </select>
+              <small>Controls request rate to avoid overwhelming the target API</small>
+            </div>
+
+            <div className="form-group">
+              <label>Custom Request Delay (ms)</label>
+              <input
+                type="number"
+                value={requestDelayMs}
+                onChange={(e) => setRequestDelayMs(e.target.value === '' ? '' : parseInt(e.target.value))}
+                placeholder="Leave empty to use intensity default"
+                min="0"
+                max="10000"
+                disabled={isAnalyzing}
+              />
+              <small>Override intensity default (optional)</small>
+            </div>
+
+            <div className="form-group">
+              <label>Test Users for BOLA/Privilege Testing</label>
+              <div style={{ marginTop: '8px' }}>
+                {testUsers.map((user, index) => (
+                  <div key={index} style={{
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    marginBottom: '12px',
+                    backgroundColor: '#f9fafb'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <strong style={{ fontSize: '0.875rem', color: '#374151' }}>User #{index + 1}</strong>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTestUser(index)}
+                        disabled={isAnalyzing}
+                        style={{
+                          padding: '4px 8px',
+                          fontSize: '0.75rem',
+                          backgroundColor: '#ef4444',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <input
+                        type="text"
+                        placeholder="Username"
+                        value={user.username || ''}
+                        onChange={(e) => handleUpdateTestUser(index, 'username', e.target.value)}
+                        disabled={isAnalyzing}
+                        style={{ fontSize: '0.875rem', padding: '6px 8px' }}
+                      />
+                      <input
+                        type="password"
+                        placeholder="Password"
+                        value={user.password || ''}
+                        onChange={(e) => handleUpdateTestUser(index, 'password', e.target.value)}
+                        disabled={isAnalyzing}
+                        style={{ fontSize: '0.875rem', padding: '6px 8px' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Client ID (optional)"
+                        value={user.clientId || ''}
+                        onChange={(e) => handleUpdateTestUser(index, 'clientId', e.target.value)}
+                        disabled={isAnalyzing}
+                        style={{ fontSize: '0.875rem', padding: '6px 8px' }}
+                      />
+                      <input
+                        type="password"
+                        placeholder="Client Secret (optional)"
+                        value={user.clientSecret || ''}
+                        onChange={(e) => handleUpdateTestUser(index, 'clientSecret', e.target.value)}
+                        disabled={isAnalyzing}
+                        style={{ fontSize: '0.875rem', padding: '6px 8px' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Token (optional)"
+                        value={user.token || ''}
+                        onChange={(e) => handleUpdateTestUser(index, 'token', e.target.value)}
+                        disabled={isAnalyzing}
+                        style={{ fontSize: '0.875rem', padding: '6px 8px', gridColumn: 'span 2' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Role (e.g., user, admin)"
+                        value={user.role || ''}
+                        onChange={(e) => handleUpdateTestUser(index, 'role', e.target.value)}
+                        disabled={isAnalyzing}
+                        style={{ fontSize: '0.875rem', padding: '6px 8px' }}
+                      />
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleAddTestUser}
+                  disabled={isAnalyzing}
+                  className="secondary"
+                  style={{ width: '100%', marginTop: '8px' }}
+                >
+                  + Add Test User
+                </button>
+                <small style={{ display: 'block', marginTop: '8px' }}>
+                  Multiple users enable horizontal privilege escalation testing (BOLA)
+                </small>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Scanner Selection */}
         <div className="config-section">

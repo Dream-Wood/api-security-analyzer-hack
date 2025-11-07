@@ -12,8 +12,17 @@ import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 /**
- * Helper for automatic authentication during API security testing.
- * Discovers registration/login endpoints and creates test users.
+ * Помощник для автоматической аутентификации во время тестирования безопасности API.
+ * Обнаруживает эндпоинты регистрации и входа, создает тестовых пользователей.
+ *
+ * <p>Основные возможности:
+ * <ul>
+ *   <li>Автоматическое обнаружение эндпоинтов аутентификации</li>
+ *   <li>Регистрация и вход тестовых пользователей</li>
+ *   <li>Поддержка OAuth2 Client Credentials Flow</li>
+ *   <li>Создание нескольких тестовых пользователей для BOLA тестов</li>
+ *   <li>Извлечение токенов из JSON ответов</li>
+ * </ul>
  */
 public final class AuthenticationHelper {
     private static final Logger logger = Logger.getLogger(AuthenticationHelper.class.getName());
@@ -52,10 +61,11 @@ public final class AuthenticationHelper {
     }
 
     /**
-     * Attempt to automatically authenticate by finding and using auth endpoints.
+     * Попытаться автоматически аутентифицироваться, найдя и используя эндпоинты аутентификации.
+     * Метод последовательно пытается различные стратегии аутентификации.
      *
-     * @param endpoints list of API endpoints
-     * @return credentials if successful, empty otherwise
+     * @param endpoints список эндпоинтов API
+     * @return учетные данные в случае успеха, пустой Optional в противном случае
      */
     public Optional<AuthCredentials> attemptAutoAuth(List<ApiEndpoint> endpoints) {
         logger.info("Attempting automatic authentication...");
@@ -69,6 +79,15 @@ public final class AuthenticationHelper {
         }
         if (loginEndpoint != null) {
             logger.info("Found login endpoint: " + loginEndpoint.getPath());
+        }
+
+        // Try OAuth2 client credentials flow (for banking APIs)
+        if (loginEndpoint != null && loginEndpoint.getPath().contains("token")) {
+            Optional<AuthCredentials> credentials = tryClientCredentialsFlow(loginEndpoint);
+            if (credentials.isPresent()) {
+                logger.info("Successfully authenticated via client credentials flow");
+                return credentials;
+            }
         }
 
         // Try registration first, then login
@@ -94,11 +113,12 @@ public final class AuthenticationHelper {
     }
 
     /**
-     * Create multiple test users for testing (useful for BOLA tests).
+     * Создать несколько тестовых пользователей для тестирования (полезно для BOLA тестов).
+     * Каждый пользователь создается с уникальным именем и временной меткой.
      *
-     * @param endpoints list of API endpoints
-     * @param count number of users to create
-     * @return list of created credentials
+     * @param endpoints список эндпоинтов API
+     * @param count количество пользователей для создания
+     * @return список созданных учетных данных
      */
     public List<AuthCredentials> createTestUsers(List<ApiEndpoint> endpoints, int count) {
         List<AuthCredentials> users = new ArrayList<>();
@@ -231,6 +251,82 @@ public final class AuthenticationHelper {
         return Optional.empty();
     }
 
+    /**
+     * Попытаться использовать OAuth2 Client Credentials Flow (для банковских/финтех API).
+     * Этот поток использует client_id и client_secret как параметры запроса вместо JSON тела.
+     *
+     * @param tokenEndpoint эндпоинт получения токена
+     * @return учетные данные с токеном в случае успеха
+     */
+    private Optional<AuthCredentials> tryClientCredentialsFlow(ApiEndpoint tokenEndpoint) {
+        // Common test client credentials for hackathons/sandbox environments
+        List<Map.Entry<String, String>> testClientCreds = List.of(
+            Map.entry("team200", "5OAaa4DYzYKfnOU6zbR34ic5qMm7VSMB"),
+            Map.entry("team100", "test_secret_123"),
+            Map.entry("test_client", "test_secret"),
+            Map.entry("demo_client", "demo_secret")
+        );
+
+        for (Map.Entry<String, String> cred : testClientCreds) {
+            Optional<AuthCredentials> result = authenticateWithClientCredentials(
+                tokenEndpoint, cred.getKey(), cred.getValue());
+            if (result.isPresent()) {
+                return result;
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    /**
+     * Аутентифицировать конкретного клиента используя OAuth2 Client Credentials Flow.
+     * Отправляет запрос с client_id и client_secret для получения токена доступа.
+     *
+     * @param tokenEndpoint эндпоинт для получения токена
+     * @param clientId идентификатор клиента
+     * @param clientSecret секрет клиента
+     * @return учетные данные с токеном в случае успеха, пустой Optional в противном случае
+     */
+    public Optional<AuthCredentials> authenticateWithClientCredentials(
+            ApiEndpoint tokenEndpoint,
+            String clientId,
+            String clientSecret) {
+
+        try {
+            // Build URL with query parameters
+            String url = baseUrl + tokenEndpoint.getPath()
+                + "?client_id=" + clientId
+                + "&client_secret=" + clientSecret;
+
+            TestRequest tokenRequest = TestRequest.builder()
+                .url(url)
+                .method("POST")
+                .addHeader("Content-Type", "application/x-www-form-urlencoded")
+                .build();
+
+            TestResponse tokenResponse = httpClient.execute(tokenRequest);
+
+            if (tokenResponse.getStatusCode() >= 200 && tokenResponse.getStatusCode() < 300) {
+                String token = extractToken(tokenResponse.getBody());
+                if (token != null) {
+                    logger.info("Client credentials flow successful for: " + clientId);
+                    return Optional.of(AuthCredentials.builder()
+                        .addHeader("X-Client-Id", clientId)
+                        .token(token)
+                        .build());
+                }
+            } else {
+                logger.fine("Client credentials auth failed for " + clientId +
+                    ": HTTP " + tokenResponse.getStatusCode());
+            }
+
+        } catch (Exception e) {
+            logger.fine("Client credentials attempt failed for " + clientId + ": " + e.getMessage());
+        }
+
+        return Optional.empty();
+    }
+
     private Optional<AuthCredentials> tryLogin(
             ApiEndpoint loginEndpoint,
             String username,
@@ -274,7 +370,11 @@ public final class AuthenticationHelper {
     }
 
     /**
-     * Extract authentication token from JSON response.
+     * Извлечь токен аутентификации из JSON ответа.
+     * Проверяет распространенные имена полей токенов в различных местах JSON структуры.
+     *
+     * @param responseBody тело JSON ответа
+     * @return токен или null, если не найден
      */
     private String extractToken(String responseBody) {
         if (responseBody == null || responseBody.isEmpty()) {

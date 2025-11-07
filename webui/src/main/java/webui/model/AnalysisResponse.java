@@ -1,7 +1,7 @@
 package webui.model;
 
 /**
- * Response model for analysis operations.
+ * Модель ответа для операций анализа безопасности.
  */
 public record AnalysisResponse(
     String sessionId,

@@ -3,7 +3,8 @@ package active.model;
 import java.util.*;
 
 /**
- * Represents an HTTP response from active testing.
+ * Представляет HTTP ответ от активного тестирования.
+ * Содержит код статуса, заголовки, тело ответа, время ответа и возможную ошибку.
  */
 public final class TestResponse {
     private final int statusCode;

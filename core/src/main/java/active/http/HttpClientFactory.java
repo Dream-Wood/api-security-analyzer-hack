@@ -3,9 +3,16 @@ package active.http;
 import java.util.logging.Logger;
 
 /**
- * Factory for creating HTTP clients based on cryptographic protocol requirements.
- * This factory enables the application to adapt to different security environments
- * by selecting the appropriate HTTP client implementation.
+ * Фабрика для создания HTTP клиентов на основе требований криптографического протокола.
+ * Эта фабрика позволяет приложению адаптироваться к различным средам безопасности,
+ * выбирая соответствующую реализацию HTTP клиента.
+ *
+ * <p>Поддерживаемые протоколы:
+ * <ul>
+ *   <li>STANDARD_TLS - стандартный TLS/SSL</li>
+ *   <li>CRYPTOPRO_JCSP - ГОСТ криптография через CryptoPro JCSP</li>
+ *   <li>CUSTOM - пользовательская реализация</li>
+ * </ul>
  */
 public final class HttpClientFactory {
     private static final Logger logger = Logger.getLogger(HttpClientFactory.class.getName());
@@ -15,11 +22,11 @@ public final class HttpClientFactory {
     }
 
     /**
-     * Create an HTTP client based on the provided configuration.
+     * Создать HTTP клиент на основе предоставленной конфигурации.
      *
-     * @param config the HTTP client configuration
-     * @return an HTTP client instance
-     * @throws UnsupportedOperationException if the requested crypto protocol is not supported
+     * @param config конфигурация HTTP клиента
+     * @return экземпляр HTTP клиента
+     * @throws UnsupportedOperationException если запрошенный криптографический протокол не поддерживается
      */
     public static HttpClient createClient(HttpClientConfig config) {
         HttpClient.CryptoProtocol protocol = config.getCryptoProtocol();
@@ -36,9 +43,9 @@ public final class HttpClientFactory {
     }
 
     /**
-     * Create a standard HTTP client with default configuration.
+     * Создать стандартный HTTP клиент с конфигурацией по умолчанию.
      *
-     * @return a standard HTTP client
+     * @return стандартный HTTP клиент
      */
     public static HttpClient createDefaultClient() {
         HttpClientConfig config = HttpClientConfig.builder()
@@ -48,12 +55,12 @@ public final class HttpClientFactory {
     }
 
     /**
-     * Create a CryptoPro JCSP HTTP client.
-     * This method attempts to load the CryptoPro implementation dynamically.
+     * Создать CryptoPro JCSP HTTP клиент.
+     * Этот метод пытается загрузить реализацию CryptoPro динамически.
      *
-     * @param config the HTTP client configuration
-     * @return a CryptoPro HTTP client
-     * @throws UnsupportedOperationException if CryptoPro libraries are not available
+     * @param config конфигурация HTTP клиента
+     * @return CryptoPro HTTP клиент
+     * @throws UnsupportedOperationException если библиотеки CryptoPro недоступны
      */
     private static HttpClient createCryptoProClient(HttpClientConfig config) {
         try {
@@ -72,18 +79,24 @@ public final class HttpClientFactory {
                 e
             );
         } catch (Exception e) {
+            logger.severe("Exception creating CryptoPro HTTP client: " + e.getClass().getName());
+            logger.severe("Exception message: " + e.getMessage());
+            if (e.getCause() != null) {
+                logger.severe("Caused by: " + e.getCause().getClass().getName() + ": " + e.getCause().getMessage());
+            }
             throw new RuntimeException(
-                "Failed to create CryptoPro HTTP client: " + e.getMessage(),
+                "Failed to create CryptoPro HTTP client: " + e.getClass().getName() +
+                (e.getMessage() != null ? " - " + e.getMessage() : ""),
                 e
             );
         }
     }
 
     /**
-     * Check if a specific crypto protocol is available.
+     * Проверить, доступен ли конкретный криптографический протокол.
      *
-     * @param protocol the crypto protocol to check
-     * @return true if available, false otherwise
+     * @param protocol криптографический протокол для проверки
+     * @return true если доступен, false в противном случае
      */
     public static boolean isProtocolAvailable(HttpClient.CryptoProtocol protocol) {
         return switch (protocol) {
@@ -94,9 +107,9 @@ public final class HttpClientFactory {
     }
 
     /**
-     * Check if CryptoPro JCSP libraries are available.
+     * Проверить, доступны ли библиотеки CryptoPro JCSP.
      *
-     * @return true if available, false otherwise
+     * @return true если доступны, false в противном случае
      */
     private static boolean isCryptoProAvailable() {
         try {

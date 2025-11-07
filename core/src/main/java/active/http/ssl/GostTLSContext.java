@@ -3,9 +3,9 @@ package active.http.ssl;
 import active.http.ssl.store.CacertsStore;
 import active.http.ssl.store.JcpKeyStore;
 import active.http.ssl.store.PfxKeyStore;
-import ru.CryptoPro.ssl.JavaTLSCertPathManagerParameters;
 
 import javax.net.ssl.*;
+import java.lang.reflect.Constructor;
 import java.security.*;
 import java.security.cert.CollectionCertStoreParameters;
 import java.security.cert.PKIXBuilderParameters;
@@ -15,18 +15,18 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * GOST TLS Context implementation based on CryptoPro JCSP.
+ * Реализация GOST TLS контекста на основе CryptoPro JCSP.
  *
- * <p>This implementation follows the official CryptoPro pattern for creating
- * SSL/TLS contexts with GOST cryptography support. It uses:
+ * <p>Эта реализация следует официальному шаблону CryptoPro для создания
+ * SSL/TLS контекстов с поддержкой криптографии ГОСТ. Использует:
  * <ul>
- *   <li>JCP KeyStore for trusted certificates</li>
- *   <li>PFX KeyStore for client certificates</li>
- *   <li>JavaTLSCertPathManagerParameters for path validation</li>
- *   <li>PKIXBuilderParameters for certificate chain building</li>
+ *   <li>JCP KeyStore для доверенных сертификатов</li>
+ *   <li>PFX KeyStore для клиентских сертификатов</li>
+ *   <li>JavaTLSCertPathManagerParameters для валидации путей</li>
+ *   <li>PKIXBuilderParameters для построения цепочки сертификатов</li>
  * </ul>
  *
- * <p><b>Usage example:</b>
+ * <p><b>Пример использования:</b>
  * <pre>
  * GostTLSContext context = GostTLSContext.builder()
  *     .pfxCertificate("certs/cert.pfx", "password")
@@ -35,7 +35,7 @@ import java.util.logging.Logger;
  * SSLSocketFactory factory = context.getSocketFactory();
  * </pre>
  *
- * @see <a href="https://habr.com/ru/companies/alfastrah/articles/823974/">GOST TLS Configuration Guide</a>
+ * @see <a href="https://habr.com/ru/companies/alfastrah/articles/823974/">Руководство по конфигурации GOST TLS</a>
  */
 public final class GostTLSContext {
     private static final Logger logger = Logger.getLogger(GostTLSContext.class.getName());
@@ -43,21 +43,24 @@ public final class GostTLSContext {
     private static final String GOST_PROTOCOL = "GostTLSv1.3";
     private static final String GOST_CERTIFICATE_ALGORITHM = "GostX509";
     private static final String COLLECTION_TYPE = "Collection";
+    private static final String JAVA_TLS_CERT_PATH_MANAGER_PARAMS_CLASS =
+        "ru.CryptoPro.ssl.JavaTLSCertPathManagerParameters";
 
     private final SSLContext sslContext;
     private final PfxKeyStore pfxKeyStore;
 
     /**
-     * Internal constructor. Use {@link #builder()} to create instances.
+     * Внутренний конструктор. Используйте {@link #builder()} для создания экземпляров.
      */
     GostTLSContext(
         PfxKeyStore pfxKeyStore,
-        boolean disableVerification
+        boolean disableVerification,
+        boolean enableRevocationCheck
     ) {
         this.pfxKeyStore = pfxKeyStore;
 
         try {
-            this.sslContext = createSSLContext(pfxKeyStore, disableVerification);
+            this.sslContext = createSSLContext(pfxKeyStore, disableVerification, enableRevocationCheck);
             logger.info("GostTLSContext initialized successfully with protocol: " + GOST_PROTOCOL);
         } catch (Exception e) {
             throw new RuntimeException(
@@ -69,38 +72,39 @@ public final class GostTLSContext {
     }
 
     /**
-     * Create a new builder for configuring GostTLSContext.
+     * Создать новый построитель для конфигурации GostTLSContext.
      *
-     * @return a new builder instance
+     * @return новый экземпляр построителя
      */
     public static Builder builder() {
         return new Builder();
     }
 
     /**
-     * Get the configured SSL context.
+     * Получить настроенный SSL контекст.
      *
-     * @return the SSL context
+     * @return SSL контекст
      */
     public SSLContext getSslContext() {
         return sslContext;
     }
 
     /**
-     * Get the SSL socket factory from this context.
+     * Получить SSL socket factory из этого контекста.
      *
-     * @return the SSL socket factory
+     * @return SSL socket factory
      */
     public SSLSocketFactory getSocketFactory() {
         return sslContext.getSocketFactory();
     }
 
     /**
-     * Create and configure the GOST SSL context.
+     * Создать и настроить GOST SSL контекст.
      */
     private SSLContext createSSLContext(
         PfxKeyStore pfxKeyStore,
-        boolean disableVerification
+        boolean disableVerification,
+        boolean enableRevocationCheck
     ) throws Exception {
 
         logger.fine("Creating GOST SSL context with protocol: " + GOST_PROTOCOL);
@@ -115,7 +119,7 @@ public final class GostTLSContext {
         // Prepare KeyManagers
         KeyManager[] keyManagers = null;
         if (pfxKeyStore != null) {
-            keyManagers = createGostKeyManagers(pfxKeyStore, jcpKeyStore, cacertsStore);
+            keyManagers = createGostKeyManagers(pfxKeyStore, jcpKeyStore, cacertsStore, enableRevocationCheck);
         }
 
         // Prepare TrustManagers
@@ -129,22 +133,26 @@ public final class GostTLSContext {
     }
 
     /**
-     * Create GOST Key Managers for client certificate authentication.
+     * Создать GOST Key Managers для аутентификации клиентского сертификата.
      *
-     * <p>This method follows the official CryptoPro pattern:
+     * <p>Этот метод следует официальному шаблону CryptoPro:
      * <ol>
-     *   <li>Create KeyManagerFactory with GostX509 algorithm</li>
-     *   <li>Build PKIXBuilderParameters with JCP KeyStore</li>
-     *   <li>Enable revocation checking</li>
-     *   <li>Add cacerts certificates to CertStore</li>
-     *   <li>Initialize JavaTLSCertPathManagerParameters with PFX store</li>
-     *   <li>Set PKIX parameters and initialize factory</li>
+     *   <li>Создать KeyManagerFactory с алгоритмом GostX509</li>
+     *   <li>Построить PKIXBuilderParameters с JCP KeyStore</li>
+     *   <li>Включить/отключить проверку отзыва на основе конфигурации</li>
+     *   <li>Добавить сертификаты cacerts в CertStore</li>
+     *   <li>Инициализировать JavaTLSCertPathManagerParameters с PFX хранилищем</li>
+     *   <li>Установить PKIX параметры и инициализировать фабрику</li>
      * </ol>
+     *
+     * @param enableRevocationCheck если true, включает проверку отзыва сертификатов через CDP.
+     *                              Требует сетевого доступа к cdp.cryptopro.ru и vpnca.cryptopro.ru
      */
     private KeyManager[] createGostKeyManagers(
         PfxKeyStore pfxKeyStore,
         JcpKeyStore jcpKeyStore,
-        CacertsStore cacertsStore
+        CacertsStore cacertsStore,
+        boolean enableRevocationCheck
     ) throws Exception {
 
         try {
@@ -159,9 +167,13 @@ public final class GostTLSContext {
                 new X509CertSelector()
             );
 
-            // Step 3: Enable revocation checking
-            pkixParameters.setRevocationEnabled(true);
-            logger.fine("Revocation checking enabled");
+            // Step 3: Enable/disable revocation checking
+            pkixParameters.setRevocationEnabled(enableRevocationCheck);
+            if (enableRevocationCheck) {
+                logger.info("Certificate revocation checking ENABLED (requires CDP access: cdp.cryptopro.ru, vpnca.cryptopro.ru)");
+            } else {
+                logger.warning("Certificate revocation checking DISABLED (not recommended for production)");
+            }
 
             // Step 4: Add cacerts certificates to CertStore for revocation checking
             java.security.cert.CertStore certStore = java.security.cert.CertStore.getInstance(
@@ -173,12 +185,11 @@ public final class GostTLSContext {
 
             // Step 5: Initialize JavaTLSCertPathManagerParameters with PFX KeyStore
             KeyStore pfxStore = pfxKeyStore.getKeyStore();
-            JavaTLSCertPathManagerParameters managerParameters =
-                new JavaTLSCertPathManagerParameters(pfxStore, new char[0]);
+            Object managerParameters = createJavaTLSCertPathManagerParameters(pfxStore);
 
             // Step 6: Set PKIX parameters and initialize factory
-            managerParameters.setParameters(pkixParameters);
-            factory.init(managerParameters);
+            setParameters(managerParameters, pkixParameters);
+            factory.init((ManagerFactoryParameters) managerParameters);
 
             logger.info("GOST KeyManagers created successfully");
             return factory.getKeyManagers();
@@ -190,9 +201,9 @@ public final class GostTLSContext {
     }
 
     /**
-     * Create GOST Trust Managers for server certificate verification.
+     * Создать GOST Trust Managers для проверки серверных сертификатов.
      *
-     * <p>Uses JCP KeyStore with certificates from cacerts for trust validation.
+     * <p>Использует JCP KeyStore с сертификатами из cacerts для валидации доверия.
      */
     private TrustManager[] createGostTrustManagers(JcpKeyStore jcpKeyStore) throws Exception {
         try {
@@ -211,7 +222,7 @@ public final class GostTLSContext {
     }
 
     /**
-     * Clean up resources.
+     * Очистить ресурсы.
      */
     public void close() {
         if (pfxKeyStore != null) {
@@ -220,18 +231,66 @@ public final class GostTLSContext {
     }
 
     /**
-     * Builder for GostTLSContext.
+     * Создать экземпляр JavaTLSCertPathManagerParameters используя рефлексию.
+     *
+     * @param keyStore KeyStore для использования
+     * @return экземпляр JavaTLSCertPathManagerParameters
+     * @throws RuntimeException если класс не может быть создан
+     */
+    private Object createJavaTLSCertPathManagerParameters(KeyStore keyStore) {
+        try {
+            Class<?> paramsClass = Class.forName(JAVA_TLS_CERT_PATH_MANAGER_PARAMS_CLASS);
+            Constructor<?> constructor = paramsClass.getConstructor(KeyStore.class, char[].class);
+            return constructor.newInstance(keyStore, new char[0]);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(
+                "CryptoPro SSL library not found. " +
+                "Class " + JAVA_TLS_CERT_PATH_MANAGER_PARAMS_CLASS + " is not available. " +
+                "Please install CryptoPro CPSSL libraries to use GOST TLS.",
+                e
+            );
+        } catch (Exception e) {
+            throw new RuntimeException(
+                "Failed to create JavaTLSCertPathManagerParameters instance",
+                e
+            );
+        }
+    }
+
+    /**
+     * Установить PKIX параметры используя рефлексию.
+     *
+     * @param managerParameters объект параметров менеджера
+     * @param pkixParameters PKIX параметры для установки
+     * @throws RuntimeException если метод не может быть вызван
+     */
+    private void setParameters(Object managerParameters, PKIXBuilderParameters pkixParameters) {
+        try {
+            managerParameters.getClass()
+                .getMethod("setParameters", PKIXBuilderParameters.class)
+                .invoke(managerParameters, pkixParameters);
+        } catch (Exception e) {
+            throw new RuntimeException(
+                "Failed to set PKIX parameters on JavaTLSCertPathManagerParameters",
+                e
+            );
+        }
+    }
+
+    /**
+     * Построитель для GostTLSContext.
      */
     public static class Builder {
         private PfxKeyStore pfxKeyStore;
         private boolean disableVerification = false;
+        private boolean enableRevocationCheck = true; // Enabled by default for security
 
         /**
-         * Set PFX certificate path and password.
+         * Установить путь к PFX сертификату и пароль.
          *
-         * @param pfxPath path to PFX file
-         * @param password PFX password
-         * @return this builder
+         * @param pfxPath путь к PFX файлу
+         * @param password пароль PFX
+         * @return этот построитель
          */
         public Builder pfxCertificate(String pfxPath, String password) {
             this.pfxKeyStore = new PfxKeyStore(pfxPath, password, false);
@@ -239,11 +298,11 @@ public final class GostTLSContext {
         }
 
         /**
-         * Set PFX certificate from classpath resource.
+         * Установить PFX сертификат из ресурса classpath.
          *
-         * @param resourcePath path to PFX resource (e.g., "certs/cert.pfx")
-         * @param password PFX password
-         * @return this builder
+         * @param resourcePath путь к PFX ресурсу (например, "certs/cert.pfx")
+         * @param password пароль PFX
+         * @return этот построитель
          */
         public Builder pfxResource(String resourcePath, String password) {
             this.pfxKeyStore = new PfxKeyStore(resourcePath, password, true);
@@ -251,10 +310,10 @@ public final class GostTLSContext {
         }
 
         /**
-         * Set custom PFX KeyStore.
+         * Установить пользовательский PFX KeyStore.
          *
-         * @param pfxKeyStore the PFX KeyStore
-         * @return this builder
+         * @param pfxKeyStore PFX KeyStore
+         * @return этот построитель
          */
         public Builder pfxKeyStore(PfxKeyStore pfxKeyStore) {
             this.pfxKeyStore = pfxKeyStore;
@@ -262,10 +321,10 @@ public final class GostTLSContext {
         }
 
         /**
-         * Disable certificate verification (for testing only).
+         * Отключить проверку сертификатов (только для тестирования).
          *
-         * @param disable true to disable verification
-         * @return this builder
+         * @param disable true для отключения проверки
+         * @return этот построитель
          */
         public Builder disableVerification(boolean disable) {
             this.disableVerification = disable;
@@ -279,12 +338,39 @@ public final class GostTLSContext {
         }
 
         /**
-         * Build the GostTLSContext.
+         * Включить или отключить проверку отзыва сертификатов через CDP.
          *
-         * @return a new GostTLSContext instance
+         * <p><b>Важно:</b> Проверка отзыва ВКЛЮЧЕНА по умолчанию для безопасности.
+         * Требует сетевого доступа к CDP серверам CryptoPro:
+         * <ul>
+         *   <li>http://cdp.cryptopro.ru/ra/cdp/*</li>
+         *   <li>http://vpnca.cryptopro.ru/cdp/*</li>
+         * </ul>
+         *
+         * <p>Отключайте проверку отзыва только в тестовых/разработочных окружениях,
+         * где доступ к CDP недоступен. Это НЕ рекомендуется для production.
+         *
+         * @param enable true для включения проверки отзыва (по умолчанию), false для отключения
+         * @return этот построитель
+         */
+        public Builder enableRevocationCheck(boolean enable) {
+            this.enableRevocationCheck = enable;
+            if (!enable) {
+                logger.warning(
+                    "Certificate revocation checking will be DISABLED. " +
+                    "This is NOT recommended for production environments!"
+                );
+            }
+            return this;
+        }
+
+        /**
+         * Построить GostTLSContext.
+         *
+         * @return новый экземпляр GostTLSContext
          */
         public GostTLSContext build() {
-            return new GostTLSContext(pfxKeyStore, disableVerification);
+            return new GostTLSContext(pfxKeyStore, disableVerification, enableRevocationCheck);
         }
     }
 }

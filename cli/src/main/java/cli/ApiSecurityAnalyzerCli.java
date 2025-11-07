@@ -9,18 +9,44 @@ import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
+import util.CryptoProtocolParser;
+import util.ModeParser;
 
 import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.util.concurrent.Callable;
 
 /**
- * Main CLI entry point for the API Security Analyzer.
- * Uses picocli for command-line argument parsing.
+ * Главная точка входа CLI для API Security Analyzer.
+ * Использует библиотеку picocli для парсинга аргументов командной строки.
+ *
+ * <p>Поддерживаемые режимы анализа:
+ * <ul>
+ *   <li><b>static</b> - статический анализ спецификации без выполнения запросов</li>
+ *   <li><b>active</b> - активное тестирование безопасности с реальными HTTP запросами</li>
+ *   <li><b>both/combined</b> - комбинированный анализ (статический + активный)</li>
+ *   <li><b>contract</b> - проверка соответствия реализации контракту API</li>
+ *   <li><b>full</b> - полный анализ (все виды тестов)</li>
+ * </ul>
+ *
+ * <p>Примеры использования:
+ * <pre>
+ * # Статический анализ
+ * api-security-analyzer spec.yaml
+ *
+ * # Активное тестирование с указанием базового URL
+ * api-security-analyzer -m active -u https://api.example.com spec.yaml
+ *
+ * # Полный анализ с поддержкой ГОСТ криптографии
+ * api-security-analyzer -m full -c gost --gost-pfx-path cert.pfx spec.yaml
+ * </pre>
+ *
+ * @author API Security Analyzer Team
+ * @since 1.0
  */
 @Command(
     name = "api-security-analyzer",
-    description = "Analyze OpenAPI specifications for security vulnerabilities and compliance issues",
+    description = "Анализ OpenAPI/AsyncAPI спецификаций на уязвимости безопасности и проблемы соответствия стандартам",
     mixinStandardHelpOptions = true,
     version = "1.0-SNAPSHOT"
 )
@@ -28,7 +54,7 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
 
     @Parameters(
         index = "0",
-        description = "Path to OpenAPI specification file (YAML/JSON) or URL"
+        description = "Path to OpenAPI/AsyncAPI specification file (YAML/JSON) or URL"
     )
     private String specLocation;
 
@@ -129,6 +155,12 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
     )
     private Integer maxParallelScans;
 
+    @Option(
+        names = {"--request-delay"},
+        description = "Delay in milliseconds between requests (default: depends on scan intensity). Use higher values (e.g., 500-1000ms) to reduce load on the backend."
+    )
+    private Integer requestDelayMs;
+
     @Override
     public Integer call() {
         PrintWriter out = new PrintWriter(System.out, true);
@@ -141,10 +173,10 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
                 return 1;
             }
 
-            // Parse and validate mode
+            // Parse and validate mode using centralized ModeParser utility
             AnalysisReport.AnalysisMode analysisMode;
             try {
-                analysisMode = parseMode(mode);
+                analysisMode = ModeParser.parse(mode);
             } catch (IllegalArgumentException e) {
                 out.println("ERROR: " + e.getMessage());
                 out.println("Valid modes: static, active, both, contract, full");
@@ -154,8 +186,8 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
             // Note: baseUrl validation moved to UnifiedAnalyzer
             // It will try to extract from spec first, then use --base-url override
 
-            // Parse crypto protocol
-            HttpClient.CryptoProtocol protocol = parseCryptoProtocol(cryptoProtocol);
+            // Parse crypto protocol using centralized CryptoProtocolParser utility
+            HttpClient.CryptoProtocol protocol = CryptoProtocolParser.parse(cryptoProtocol);
 
             // Parse report format
             ReportFormat reportFormat = parseFormat(format);
@@ -192,6 +224,14 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
                 configBuilder.maxParallelScans(maxParallelScans);
             }
 
+            // Set request delay if provided
+            if (requestDelayMs != null && requestDelayMs >= 0) {
+                configBuilder.requestDelayMs(requestDelayMs);
+                if (verbose) {
+                    out.println("  Request Delay: " + requestDelayMs + "ms");
+                }
+            }
+
             UnifiedAnalyzer.AnalyzerConfig config = configBuilder.build();
 
             // Perform analysis
@@ -222,32 +262,6 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
         }
     }
 
-    private AnalysisReport.AnalysisMode parseMode(String mode) {
-        if (mode == null || mode.equalsIgnoreCase("static")) {
-            return AnalysisReport.AnalysisMode.STATIC_ONLY;
-        } else if (mode.equalsIgnoreCase("active")) {
-            return AnalysisReport.AnalysisMode.ACTIVE_ONLY;
-        } else if (mode.equalsIgnoreCase("both") || mode.equalsIgnoreCase("combined")) {
-            return AnalysisReport.AnalysisMode.COMBINED;
-        } else if (mode.equalsIgnoreCase("contract")) {
-            return AnalysisReport.AnalysisMode.CONTRACT;
-        } else if (mode.equalsIgnoreCase("full") || mode.equalsIgnoreCase("all")) {
-            return AnalysisReport.AnalysisMode.FULL;
-        } else {
-            throw new IllegalArgumentException("Invalid mode: " + mode);
-        }
-    }
-
-    private HttpClient.CryptoProtocol parseCryptoProtocol(String protocol) {
-        if (protocol == null || protocol.equalsIgnoreCase("standard")) {
-            return HttpClient.CryptoProtocol.STANDARD_TLS;
-        } else if (protocol.equalsIgnoreCase("gost") || protocol.equalsIgnoreCase("cryptopro")) {
-            return HttpClient.CryptoProtocol.CRYPTOPRO_JCSP;
-        } else {
-            return HttpClient.CryptoProtocol.STANDARD_TLS;
-        }
-    }
-
     private ReportFormat parseFormat(String format) {
         if (format == null || format.equalsIgnoreCase("console")) {
             return ReportFormat.CONSOLE;
@@ -273,12 +287,14 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
                 .anyMatch(f -> f.getSeverity().isCriticalOrHigh());
         }
 
-        if (!hasCriticalOrHigh && report.hasActiveResults() && !report.getActiveResult().hasError()) {
+        if (!hasCriticalOrHigh && report.hasActiveResults() && !report.getActiveResult().hasError()
+                && report.getActiveResult().getReport() != null) {
             hasCriticalOrHigh = report.getActiveResult().getReport().getAllVulnerabilities().stream()
                 .anyMatch(v -> v.getSeverity().isCriticalOrHigh());
         }
 
-        if (!hasCriticalOrHigh && report.hasContractResults() && !report.getContractResult().hasError()) {
+        if (!hasCriticalOrHigh && report.hasContractResults() && !report.getContractResult().hasError()
+                && report.getContractResult().getReport() != null) {
             hasCriticalOrHigh = report.getContractResult().getReport().hasCriticalIssues();
         }
 

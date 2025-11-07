@@ -9,6 +9,15 @@ export interface ScannerInfo {
   category: string;
 }
 
+export interface UserCredentials {
+  username?: string;
+  password?: string;
+  clientId?: string;
+  clientSecret?: string;
+  token?: string;
+  role?: string;
+}
+
 export interface AnalysisRequest {
   specLocation: string;
   mode: string;
@@ -25,6 +34,9 @@ export interface AnalysisRequest {
   createTestUsers: boolean;
   maxParallelScans?: number;
   enabledScanners?: string[];
+  scanIntensity?: string;
+  requestDelayMs?: number;
+  testUsers?: UserCredentials[];
 }
 
 export interface AnalysisResponse {
@@ -45,7 +57,16 @@ export interface AnalysisSession {
   status: string;
   logs: LogEntry[];
   report?: any;
+  currentStep: number;
+  totalSteps: number;
+  progressPercentage: number;
+  estimatedTimeRemaining: number;
+  currentPhase: string;
+  currentEndpoint: string;
+  currentScanner: string;
+  totalVulnerabilitiesFound: number;
 }
 
 export type AnalysisMode = 'static' | 'active' | 'both' | 'contract' | 'full';
 export type CryptoProtocol = 'standard' | 'gost';
+export type ScanIntensity = 'low' | 'medium' | 'high' | 'aggressive';

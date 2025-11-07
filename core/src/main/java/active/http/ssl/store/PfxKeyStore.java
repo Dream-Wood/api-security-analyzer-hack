@@ -12,10 +12,10 @@ import java.security.cert.CertificateException;
 import java.util.logging.Logger;
 
 /**
- * PFX KeyStore implementation for loading client certificates.
+ * Реализация PFX KeyStore для загрузки клиентских сертификатов.
  *
- * <p>This class loads PFX (PKCS#12) certificates that contain private keys
- * for client authentication in GOST TLS connections.
+ * <p>Этот класс загружает PFX (PKCS#12) сертификаты, которые содержат приватные ключи
+ * для клиентской аутентификации в GOST TLS соединениях.
  */
 public final class PfxKeyStore {
     private static final Logger logger = Logger.getLogger(PfxKeyStore.class.getName());
@@ -27,21 +27,21 @@ public final class PfxKeyStore {
     private final boolean isResource;
 
     /**
-     * Create PFX store from file path.
+     * Создать PFX хранилище из пути к файлу.
      *
-     * @param pfxPath path to PFX file
-     * @param password PFX password
+     * @param pfxPath путь к PFX файлу
+     * @param password пароль PFX
      */
     public PfxKeyStore(String pfxPath, String password) {
         this(pfxPath, password, false);
     }
 
     /**
-     * Create PFX store from resource or file path.
+     * Создать PFX хранилище из ресурса или пути к файлу.
      *
-     * @param pfxPath path to PFX file or resource
-     * @param password PFX password
-     * @param isResource true if path is a resource, false if file path
+     * @param pfxPath путь к PFX файлу или ресурсу
+     * @param password пароль PFX
+     * @param isResource true если путь к ресурсу, false если путь к файлу
      */
     public PfxKeyStore(String pfxPath, String password, boolean isResource) {
         this.pfxPath = pfxPath;
@@ -50,11 +50,11 @@ public final class PfxKeyStore {
     }
 
     /**
-     * Get the loaded KeyStore instance.
-     * Loads the PFX certificate on first access and caches it.
+     * Получить загруженный экземпляр KeyStore.
+     * Загружает PFX сертификат при первом обращении и кэширует его.
      *
-     * @return KeyStore instance containing the PFX certificate
-     * @throws RuntimeException if PFX cannot be loaded
+     * @return экземпляр KeyStore, содержащий PFX сертификат
+     * @throws RuntimeException если PFX не может быть загружен
      */
     public KeyStore getKeyStore() {
         if (keyStore != null) {
@@ -86,7 +86,7 @@ public final class PfxKeyStore {
     }
 
     /**
-     * Load PFX from classpath resource.
+     * Загрузить PFX из ресурса classpath.
      */
     private byte[] loadFromResource(String resourcePath) throws IOException {
         try (InputStream is = getClass().getClassLoader().getResourceAsStream(resourcePath)) {
@@ -98,7 +98,7 @@ public final class PfxKeyStore {
     }
 
     /**
-     * Load PFX from file system.
+     * Загрузить PFX из файловой системы.
      */
     private byte[] loadFromFile(String filePath) throws IOException {
         try (InputStream is = new FileInputStream(filePath)) {
@@ -107,7 +107,7 @@ public final class PfxKeyStore {
     }
 
     /**
-     * Clear the password from memory.
+     * Очистить пароль из памяти.
      */
     public void clearPassword() {
         if (password != null) {

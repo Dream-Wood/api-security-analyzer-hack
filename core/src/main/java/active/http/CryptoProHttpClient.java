@@ -15,32 +15,42 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * HTTP client implementation with CryptoPro JCSP support for GOST cryptography.
+ * Реализация HTTP клиента с поддержкой CryptoPro JCSP для криптографии ГОСТ.
  *
- * <p>This implementation uses HttpURLConnection with a custom GOST TLS context
- * created according to the official CryptoPro pattern.
+ * <p>Эта реализация использует HttpURLConnection с пользовательским GOST TLS контекстом,
+ * созданным в соответствии с официальным шаблоном CryptoPro.
  *
- * <p><b>Features:</b>
+ * <p><b>Возможности:</b>
  * <ul>
- *   <li>GOST TLSv1.3 protocol support</li>
- *   <li>Client certificate authentication via PFX</li>
- *   <li>Server certificate verification via cacerts</li>
- *   <li>Certificate revocation checking</li>
+ *   <li>Поддержка протокола GOST TLSv1.3</li>
+ *   <li>Аутентификация клиента через PFX сертификат</li>
+ *   <li>Проверка серверных сертификатов через cacerts</li>
+ *   <li>Проверка отзыва сертификатов</li>
  * </ul>
  *
- * <p><b>Configuration via HttpClientConfig:</b>
+ * <p><b>Конфигурация через HttpClientConfig:</b>
  * <pre>
  * HttpClientConfig config = HttpClientConfig.builder()
  *     .cryptoProtocol(HttpClient.CryptoProtocol.CRYPTOPRO_JCSP)
  *     .verifySsl(true)
  *     .addCustomSetting("pfxPath", "certs/cert.pfx")
  *     .addCustomSetting("pfxPassword", "password")
- *     .addCustomSetting("pfxResource", "true") // if PFX is in resources
+ *     .addCustomSetting("pfxResource", "true") // если PFX в ресурсах
+ *     .addCustomSetting("enableRevocationCheck", "true") // по умолчанию: true (требует доступ к CDP)
  *     .build();
  * </pre>
  *
+ * <p><b>Проверка отзыва сертификатов:</b>
+ * По умолчанию проверка отзыва сертификатов ВКЛЮЧЕНА и требует сетевого доступа к:
+ * <ul>
+ *   <li>http://cdp.cryptopro.ru/ra/cdp/*</li>
+ *   <li>http://vpnca.cryptopro.ru/cdp/*</li>
+ * </ul>
+ * Без доступа к CDP, TLS handshake завершится ошибкой проверки сертификата.
+ * Для тестовых окружений отключите через: .addCustomSetting("enableRevocationCheck", "false")
+ *
  * @see GostTLSContext
- * @see <a href="https://habr.com/ru/companies/alfastrah/articles/823974/">GOST TLS Configuration Guide</a>
+ * @see <a href="https://habr.com/ru/companies/alfastrah/articles/823974/">Руководство по конфигурации GOST TLS</a>
  */
 public final class CryptoProHttpClient implements HttpClient {
     private static final Logger logger = Logger.getLogger(CryptoProHttpClient.class.getName());
@@ -51,20 +61,28 @@ public final class CryptoProHttpClient implements HttpClient {
     public CryptoProHttpClient(HttpClientConfig config) {
         this.config = config;
 
-        // Initialize CryptoPro providers
-        if (!CryptoProProvider.isAvailable()) {
-            throw new RuntimeException(
-                "CryptoPro JCSP libraries not found. " +
-                "Please ensure ru.cryptopro:jcp and related libraries are in classpath."
-            );
+        try {
+            logger.info("Initializing CryptoProHttpClient...");
+
+            // Initialize CryptoPro providers
+            if (!CryptoProProvider.isAvailable()) {
+                throw new RuntimeException(
+                    "CryptoPro JCSP libraries not found. " +
+                    "Please ensure ru.cryptopro:jcp and related libraries are in classpath."
+                );
+            }
+
+            CryptoProProvider.initialize();
+
+            // Create GOST TLS context
+            logger.info("Creating GOST TLS context...");
+            this.tlsContext = createGostTLSContext(config);
+
+            logger.info("CryptoProHttpClient initialized with GOST TLS support");
+        } catch (Exception e) {
+            logger.severe("Failed to initialize CryptoProHttpClient: " + e.getClass().getName() + ": " + e.getMessage());
+            throw e;
         }
-
-        CryptoProProvider.initialize();
-
-        // Create GOST TLS context
-        this.tlsContext = createGostTLSContext(config);
-
-        logger.info("CryptoProHttpClient initialized with GOST TLS support");
     }
 
     @Override
@@ -150,7 +168,12 @@ public final class CryptoProHttpClient implements HttpClient {
     }
 
     /**
-     * Create GOST TLS context from HttpClientConfig.
+     * Создать GOST TLS контекст из HttpClientConfig.
+     * Конфигурирует PFX сертификат, проверку SSL и отзыв сертификатов.
+     *
+     * @param config конфигурация HTTP клиента
+     * @return настроенный GOST TLS контекст
+     * @throws RuntimeException если не удалось создать контекст
      */
     private GostTLSContext createGostTLSContext(HttpClientConfig config) {
         try {
@@ -187,9 +210,23 @@ public final class CryptoProHttpClient implements HttpClient {
             }
             builder.disableVerification(!verifySsl);
 
-            return builder.build();
+            // Configure certificate revocation checking
+            boolean enableRevocationCheck = config.getCustomSetting("enableRevocationCheck")
+                .map(Object::toString)
+                .map(Boolean::parseBoolean)
+                .orElse(true); // Enabled by default for security
+            builder.enableRevocationCheck(enableRevocationCheck);
+
+            logger.info("Building GostTLSContext...");
+            GostTLSContext context = builder.build();
+            logger.info("GostTLSContext built successfully");
+            return context;
 
         } catch (Exception e) {
+            logger.severe("Failed to create GOST TLS context: " + e.getClass().getName() + ": " + e.getMessage());
+            if (e.getCause() != null) {
+                logger.severe("Caused by: " + e.getCause().getClass().getName() + ": " + e.getCause().getMessage());
+            }
             throw new RuntimeException(
                 "Failed to create GOST TLS context. " +
                 "Ensure CryptoPro providers are properly configured and licensed.",

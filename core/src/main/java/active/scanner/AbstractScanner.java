@@ -11,14 +11,14 @@ import java.util.*;
 import java.util.logging.Logger;
 
 /**
- * Abstract base class for vulnerability scanners.
- * Provides common functionality and reduces boilerplate for scanner implementations.
+ * Абстрактный базовый класс для сканеров уязвимостей.
+ * Предоставляет общую функциональность и уменьшает шаблонный код для реализаций сканеров.
  *
- * <p>Subclasses should:
+ * <p>Подклассы должны:
  * <ul>
- *   <li>Define scanner metadata (ID, name, description)</li>
- *   <li>Implement {@link #isApplicable(ApiEndpoint)} to filter endpoints</li>
- *   <li>Implement {@link #performScan(ApiEndpoint, HttpClient, ScanContext)} with test logic</li>
+ *   <li>Определить метаданные сканера (ID, имя, описание)</li>
+ *   <li>Реализовать {@link #isApplicable(ApiEndpoint)} для фильтрации эндпоинтов</li>
+ *   <li>Реализовать {@link #performScan(ApiEndpoint, HttpClient, ScanContext)} с логикой тестирования</li>
  * </ul>
  */
 public abstract class AbstractScanner implements VulnerabilityScanner {
@@ -58,13 +58,13 @@ public abstract class AbstractScanner implements VulnerabilityScanner {
     }
 
     /**
-     * Perform the actual vulnerability scan.
-     * Subclasses implement this method with their specific test logic.
+     * Выполнить фактическое сканирование на уязвимости.
+     * Подклассы реализуют этот метод со своей специфической логикой тестирования.
      *
-     * @param endpoint the endpoint to scan
-     * @param httpClient the HTTP client to use for testing
-     * @param context the scan context with configuration and state
-     * @return scan result with detected vulnerabilities
+     * @param endpoint эндпоинт для сканирования
+     * @param httpClient HTTP клиент для использования при тестировании
+     * @param context контекст сканирования с конфигурацией и состоянием
+     * @return результат сканирования с обнаруженными уязвимостями
      */
     protected abstract ScanResult performScan(
         ApiEndpoint endpoint,
@@ -83,13 +83,13 @@ public abstract class AbstractScanner implements VulnerabilityScanner {
     }
 
     /**
-     * Helper method to create a successful scan result.
+     * Вспомогательный метод для создания успешного результата сканирования.
      *
-     * @param endpoint the scanned endpoint
-     * @param vulnerabilities list of discovered vulnerabilities
-     * @param totalTests total number of tests executed
-     * @param startTime scan start time
-     * @return scan result
+     * @param endpoint отсканированный эндпоинт
+     * @param vulnerabilities список обнаруженных уязвимостей
+     * @param totalTests общее количество выполненных тестов
+     * @param startTime время начала сканирования
+     * @return результат сканирования
      */
     protected ScanResult createSuccessResult(
         ApiEndpoint endpoint,
@@ -110,10 +110,10 @@ public abstract class AbstractScanner implements VulnerabilityScanner {
     }
 
     /**
-     * Helper to check if response indicates successful authentication bypass.
+     * Вспомогательный метод для проверки, указывает ли ответ на успешный обход аутентификации.
      *
-     * @param response the HTTP response
-     * @return true if the response suggests successful unauthorized access
+     * @param response HTTP ответ
+     * @return true если ответ предполагает успешный несанкционированный доступ
      */
     protected boolean isSuccessfulUnauthorizedAccess(TestResponse response) {
         int status = response.getStatusCode();
@@ -122,10 +122,10 @@ public abstract class AbstractScanner implements VulnerabilityScanner {
     }
 
     /**
-     * Helper to check if response indicates authentication is required.
+     * Вспомогательный метод для проверки, требует ли ответ аутентификацию.
      *
-     * @param response the HTTP response
-     * @return true if the response indicates missing/invalid authentication
+     * @param response HTTP ответ
+     * @return true если ответ указывает на отсутствующую/недействительную аутентификацию
      */
     protected boolean isAuthenticationRequired(TestResponse response) {
         int status = response.getStatusCode();
@@ -134,15 +134,28 @@ public abstract class AbstractScanner implements VulnerabilityScanner {
     }
 
     /**
-     * Helper to execute a test request and log the result.
+     * Вспомогательный метод для выполнения тестового запроса и логирования результата.
+     * Реализует троттлинг на основе конфигурации сканера, чтобы избежать перегрузки production систем.
      *
-     * @param httpClient the HTTP client
-     * @param request the test request
-     * @param testName name of the test for logging
-     * @return the response
+     * @param httpClient HTTP клиент
+     * @param request тестовый запрос
+     * @param testName имя теста для логирования
+     * @return ответ
      */
     protected TestResponse executeTest(HttpClient httpClient, TestRequest request, String testName) {
         logger.fine("Executing test: " + testName);
+
+        // Apply throttling delay if configured (to avoid DoS on production)
+        int delayMs = config.getRequestDelayMs();
+        if (delayMs > 0) {
+            try {
+                Thread.sleep(delayMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.warning("Throttling delay interrupted: " + e.getMessage());
+            }
+        }
+
         return httpClient.execute(request);
     }
 }

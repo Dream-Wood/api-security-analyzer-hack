@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import { api } from '../services/api';
 import './ResultsPanel.css';
 
 interface ResultsPanelProps {
   report: any;
   status: string;
+  sessionId: string | null;
 }
 
 interface EndpointVulnerabilities {
@@ -19,9 +21,33 @@ interface EndpointVulnerabilities {
   };
 }
 
-export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status }) => {
+// Severity order for sorting
+const SEVERITY_ORDER: Record<string, number> = {
+  'CRITICAL': 0,
+  'HIGH': 1,
+  'MEDIUM': 2,
+  'LOW': 3,
+  'INFO': 4
+};
+
+/**
+ * Sort vulnerabilities/findings by severity (Critical > High > Medium > Low > Info)
+ */
+const sortBySeverity = <T extends { severity?: string }>(items: T[]): T[] => {
+  return [...items].sort((a, b) => {
+    const severityA = (a.severity || 'INFO').toUpperCase();
+    const severityB = (b.severity || 'INFO').toUpperCase();
+    const orderA = SEVERITY_ORDER[severityA] ?? 999;
+    const orderB = SEVERITY_ORDER[severityB] ?? 999;
+    return orderA - orderB;
+  });
+};
+
+export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sessionId }) => {
   const [activeTab, setActiveTab] = useState<'summary' | 'static' | 'active' | 'contract'>('summary');
   const [expandedEndpoints, setExpandedEndpoints] = useState<Set<string>>(new Set());
+  const [showFormatMenu, setShowFormatMenu] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const toggleEndpoint = (endpointKey: string) => {
     setExpandedEndpoints(prev => {
@@ -33,6 +59,21 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status }) =>
       }
       return next;
     });
+  };
+
+  const handleDownload = async (format: 'PDF' | 'JSON' | 'CONSOLE') => {
+    if (!sessionId || !report) return;
+
+    try {
+      setIsDownloading(true);
+      await api.downloadReport(sessionId, format);
+      setShowFormatMenu(false);
+    } catch (error) {
+      console.error('Failed to download report:', error);
+      alert('Failed to download report. Please try again.');
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   if (!report) {
@@ -73,6 +114,32 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status }) =>
     const vulnerabilities = hasActive ? (report.activeResult?.report?.allVulnerabilities || []) : [];
     const endpointGroups = vulnerabilities.length > 0 ? groupVulnerabilitiesByEndpoint(vulnerabilities) : [];
 
+    // Get spec display name - prefer title from spec, fallback to filename
+    const getSpecDisplayName = (specLocation: string, specTitle?: string): string => {
+      // If we have a title from the spec, use it
+      if (specTitle) {
+        return specTitle;
+      }
+
+      // Fallback: extract filename from path or URL
+      if (!specLocation) return 'Unknown';
+
+      // If it's a URL, extract the filename from the URL path
+      if (specLocation.startsWith('http://') || specLocation.startsWith('https://')) {
+        try {
+          const url = new URL(specLocation);
+          const pathParts = url.pathname.split('/');
+          return pathParts[pathParts.length - 1] || url.hostname;
+        } catch {
+          return specLocation;
+        }
+      }
+
+      // For file paths, extract just the filename
+      const pathParts = specLocation.split('/');
+      return pathParts[pathParts.length - 1] || specLocation;
+    };
+
     return (
       <div className="results-summary">
         <div className="summary-card">
@@ -80,7 +147,9 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status }) =>
           <div className="summary-grid">
             <div className="summary-item">
               <span className="summary-label">Specification</span>
-              <span className="summary-value">{report.specLocation}</span>
+              <span className="summary-value" title={report.specLocation}>
+                {getSpecDisplayName(report.specLocation, report.specTitle)}
+              </span>
             </div>
             <div className="summary-item">
               <span className="summary-label">Mode</span>
@@ -189,7 +258,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status }) =>
 
                     {isExpanded && (
                       <div className="endpoint-vulnerabilities-details">
-                        {endpointGroup.vulnerabilities.map((vuln: any, vulnIndex: number) => (
+                        {sortBySeverity(endpointGroup.vulnerabilities).map((vuln: any, vulnIndex: number) => (
                           <div key={vulnIndex} className={`vulnerability-detail-item severity-${vuln.severity?.toLowerCase()}`}>
                             <div className="vulnerability-detail-header">
                               <span className={`severity-badge ${vuln.severity?.toLowerCase()}`}>
@@ -385,7 +454,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status }) =>
 
                     {isExpanded && (
                       <div className="endpoint-vulnerabilities-details">
-                        {endpointGroup.findings.map((finding: any, findingIndex: number) => (
+                        {sortBySeverity(endpointGroup.findings).map((finding: any, findingIndex: number) => (
                           <div key={findingIndex} className={`vulnerability-detail-item severity-${finding.severity?.toLowerCase()}`}>
                             <div className="vulnerability-detail-header">
                               <span className={`severity-badge ${finding.severity?.toLowerCase()}`}>
@@ -557,7 +626,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status }) =>
 
                     {isExpanded && (
                       <div className="endpoint-vulnerabilities-details">
-                        {endpointGroup.vulnerabilities.map((vuln: any, vulnIndex: number) => (
+                        {sortBySeverity(endpointGroup.vulnerabilities).map((vuln: any, vulnIndex: number) => (
                           <div key={vulnIndex} className={`vulnerability-detail-item severity-${vuln.severity?.toLowerCase()}`}>
                             <div className="vulnerability-detail-header">
                               <span className={`severity-badge ${vuln.severity?.toLowerCase()}`}>
@@ -785,7 +854,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status }) =>
 
                   {isExpanded && (
                     <div className="endpoint-vulnerabilities-details">
-                      {endpointGroup.divergences.map((divergence: any, divIndex: number) => (
+                      {sortBySeverity(endpointGroup.divergences).map((divergence: any, divIndex: number) => (
                         <div key={divIndex} className={`vulnerability-detail-item severity-${divergence.severity?.toLowerCase()}`}>
                           <div className="vulnerability-detail-header">
                             <span className={`severity-badge ${divergence.severity?.toLowerCase()}`}>
@@ -858,7 +927,146 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status }) =>
     <div className="results-panel">
       <div className="results-header">
         <h3>Results</h3>
-        <span className={`status-badge ${status}`}>{status}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span className={`status-badge ${status}`}>{status}</span>
+          {report && sessionId && (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowFormatMenu(!showFormatMenu)}
+                disabled={isDownloading}
+                onMouseEnter={(e) => {
+                  if (!isDownloading) {
+                    e.currentTarget.style.backgroundColor = '#2563eb';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 4px 6px rgba(59, 130, 246, 0.3)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#3b82f6';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
+                }}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#3b82f6',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: isDownloading ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  opacity: isDownloading ? 0.6 : 1,
+                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                  transition: 'all 0.2s ease',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <span style={{ fontSize: '16px' }}>📥</span>
+                <span>{isDownloading ? 'Downloading...' : 'Download Report'}</span>
+                {!isDownloading && <span style={{ fontSize: '12px' }}>▼</span>}
+              </button>
+              {showFormatMenu && !isDownloading && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '8px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
+                    zIndex: 1000,
+                    minWidth: '200px',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <button
+                    onClick={() => handleDownload('PDF')}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      color: '#1f2937',
+                      fontWeight: '500',
+                      borderBottom: '1px solid #e5e7eb',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      transition: 'background-color 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#eff6ff';
+                      e.currentTarget.style.color = '#2563eb';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                      e.currentTarget.style.color = '#1f2937';
+                    }}
+                  >
+                    <span style={{ fontSize: '18px' }}>📄</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span>PDF Report</span>
+                      <span style={{ fontSize: '11px', opacity: 0.7 }}>Full report with charts</span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => handleDownload('JSON')}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      color: '#1f2937',
+                      fontWeight: '500',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      transition: 'background-color 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#eff6ff';
+                      e.currentTarget.style.color = '#2563eb';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                      e.currentTarget.style.color = '#1f2937';
+                    }}
+                  >
+                    <span style={{ fontSize: '18px' }}>📊</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span>JSON Format</span>
+                      <span style={{ fontSize: '11px', opacity: 0.7 }}>Structured data</span>
+                    </div>
+                  </button>
+                </div>
+              )}
+              {showFormatMenu && (
+                <div
+                  style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    zIndex: 999
+                  }}
+                  onClick={() => setShowFormatMenu(false)}
+                />
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="results-tabs">

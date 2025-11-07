@@ -13,19 +13,19 @@ import java.util.List;
 import java.util.logging.Logger;
 
 /**
- * Store for retrieving trusted certificates from Java's cacerts store.
+ * Хранилище для получения доверенных сертификатов из cacerts Java.
  *
- * <p>This class extracts all trusted certificates from the system's cacerts
- * keystore, which is used to verify server certificates during TLS connections.
+ * <p>Этот класс извлекает все доверенные сертификаты из системного хранилища
+ * cacerts, которое используется для проверки серверных сертификатов при TLS соединениях.
  */
 public final class CacertsStore {
     private static final Logger logger = Logger.getLogger(CacertsStore.class.getName());
 
     /**
-     * Get list of trusted certificates from Java's cacerts keystore.
+     * Получить список доверенных сертификатов из хранилища cacerts Java.
      *
-     * @return list of X509 certificates from cacerts
-     * @throws RuntimeException if certificates cannot be loaded
+     * @return список X509 сертификатов из cacerts
+     * @throws RuntimeException если сертификаты не могут быть загружены
      */
     public List<X509Certificate> getCertificatesFromCacerts() {
         TrustManagerFactory trustManagerFactory;

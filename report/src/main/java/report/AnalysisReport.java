@@ -10,10 +10,43 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Unified analysis report containing both static and active analysis results.
+ * Унифицированный отчет о результатах анализа безопасности API.
+ *
+ * <p>Этот класс объединяет результаты всех типов анализа:
+ * <ul>
+ *   <li><b>Статический анализ</b> - проверка спецификации на соответствие best practices</li>
+ *   <li><b>Активное тестирование</b> - поиск уязвимостей через реальные HTTP запросы</li>
+ *   <li><b>Валидация контракта</b> - проверка соответствия реализации API спецификации</li>
+ * </ul>
+ *
+ * <p>Отчет является неизменяемым (immutable) объектом, создаваемым через {@link Builder}.
+ * Содержит метаинформацию о процессе анализа (время, режим, местоположение спецификации)
+ * и результаты каждого типа анализа в виде вложенных объектов.
+ *
+ * <p>Пример использования:
+ * <pre>{@code
+ * AnalysisReport report = AnalysisReport.builder()
+ *     .specLocation("petstore.yaml")
+ *     .specTitle("Petstore API")
+ *     .startTime(Instant.now())
+ *     .mode(AnalysisMode.FULL)
+ *     .staticResult(staticResult)
+ *     .activeResult(activeResult)
+ *     .contractResult(contractResult)
+ *     .endTime(Instant.now())
+ *     .build();
+ * }</pre>
+ *
+ * @author API Security Analyzer Team
+ * @since 1.0
+ * @see AnalysisMode
+ * @see StaticAnalysisResult
+ * @see ActiveAnalysisResult
+ * @see ContractAnalysisResult
  */
 public final class AnalysisReport {
     private final String specLocation;
+    private final String specTitle;
     private final Instant startTime;
     private final Instant endTime;
     private final AnalysisMode mode;
@@ -21,16 +54,34 @@ public final class AnalysisReport {
     private final ActiveAnalysisResult activeResult;
     private final ContractAnalysisResult contractResult;
 
+    /**
+     * Режим анализа API, определяющий какие типы проверок будут выполнены.
+     *
+     * <p>Различные режимы позволяют оптимизировать процесс анализа в зависимости от целей:
+     * <ul>
+     *   <li>{@link #STATIC_ONLY} - быстрая проверка спецификации без запросов к API</li>
+     *   <li>{@link #ACTIVE_ONLY} - только активное тестирование (требует доступ к API)</li>
+     *   <li>{@link #COMBINED} - статический + активный анализ</li>
+     *   <li>{@link #CONTRACT} - проверка соответствия реализации контракту</li>
+     *   <li>{@link #FULL} - полный анализ со всеми типами проверок</li>
+     * </ul>
+     */
     public enum AnalysisMode {
+        /** Только статический анализ спецификации (без HTTP запросов). */
         STATIC_ONLY,
+        /** Только активное тестирование безопасности (требует доступ к API). */
         ACTIVE_ONLY,
-        COMBINED,      // Static + Active
+        /** Комбинированный режим: статический анализ + активное тестирование. */
+        COMBINED,
+        /** Проверка соответствия реализации контракту API. */
         CONTRACT,
-        FULL           // Static + Active + Contract
+        /** Полный анализ: статический + активный + валидация контракта. */
+        FULL
     }
 
     private AnalysisReport(Builder builder) {
         this.specLocation = Objects.requireNonNull(builder.specLocation);
+        this.specTitle = builder.specTitle;
         this.startTime = Objects.requireNonNull(builder.startTime);
         this.endTime = Objects.requireNonNull(builder.endTime);
         this.mode = Objects.requireNonNull(builder.mode);
@@ -45,6 +96,10 @@ public final class AnalysisReport {
 
     public String getSpecLocation() {
         return specLocation;
+    }
+
+    public String getSpecTitle() {
+        return specTitle;
     }
 
     public Instant getStartTime() {
@@ -88,17 +143,27 @@ public final class AnalysisReport {
         if (staticResult != null) {
             count += staticResult.getFindings().size();
         }
-        if (activeResult != null) {
+        if (activeResult != null && activeResult.getReport() != null) {
             count += activeResult.getReport().getTotalVulnerabilityCount();
         }
-        if (contractResult != null && !contractResult.hasError()) {
+        if (contractResult != null && !contractResult.hasError() && contractResult.getReport() != null) {
             count += contractResult.getReport().getTotalDivergences();
         }
         return count;
     }
 
     /**
-     * Static analysis result wrapper.
+     * Результаты статического анализа спецификации API.
+     *
+     * <p>Содержит информацию о проблемах, обнаруженных при анализе спецификации
+     * без выполнения реальных запросов к API. Включает:
+     * <ul>
+     *   <li>Сообщения о проблемах парсинга спецификации</li>
+     *   <li>Список обнаруженных проблем безопасности и соответствия стандартам</li>
+     *   <li>Сообщение об ошибке, если анализ не удалось выполнить</li>
+     * </ul>
+     *
+     * <p>Объект является неизменяемым (immutable).
      */
     public static final class StaticAnalysisResult {
         private final List<String> parsingMessages;
@@ -135,7 +200,20 @@ public final class AnalysisReport {
     }
 
     /**
-     * Active analysis result wrapper.
+     * Результаты активного тестирования безопасности API.
+     *
+     * <p>Содержит информацию об уязвимостях, обнаруженных при выполнении
+     * реальных HTTP запросов к API. Включает результаты работы различных
+     * сканеров безопасности:
+     * <ul>
+     *   <li>SQL Injection сканер</li>
+     *   <li>XSS (Cross-Site Scripting) сканер</li>
+     *   <li>BOLA (Broken Object Level Authorization) сканер</li>
+     *   <li>Authentication bypass сканер</li>
+     *   <li>И другие сканеры безопасности</li>
+     * </ul>
+     *
+     * <p>Объект является неизменяемым (immutable).
      */
     public static final class ActiveAnalysisResult {
         private final ActiveAnalysisEngine.AnalysisReport report;
@@ -161,7 +239,19 @@ public final class AnalysisReport {
     }
 
     /**
-     * Contract validation result wrapper.
+     * Результаты валидации соответствия реализации API контракту (спецификации).
+     *
+     * <p>Содержит информацию о расхождениях между тем, что описано в спецификации,
+     * и тем, как API фактически работает. Проверяет:
+     * <ul>
+     *   <li>Соответствие структуры ответов схемам из спецификации</li>
+     *   <li>Корректность HTTP статус-кодов</li>
+     *   <li>Наличие обязательных полей в ответах</li>
+     *   <li>Соответствие типов данных</li>
+     *   <li>Дополнительные/отсутствующие поля</li>
+     * </ul>
+     *
+     * <p>Объект является неизменяемым (immutable).
      */
     public static final class ContractAnalysisResult {
         private final ContractValidationEngine.ContractValidationReport report;
@@ -188,6 +278,7 @@ public final class AnalysisReport {
 
     public static class Builder {
         private String specLocation;
+        private String specTitle;
         private Instant startTime;
         private Instant endTime;
         private AnalysisMode mode;
@@ -197,6 +288,11 @@ public final class AnalysisReport {
 
         public Builder specLocation(String specLocation) {
             this.specLocation = specLocation;
+            return this;
+        }
+
+        public Builder specTitle(String specTitle) {
+            this.specTitle = specTitle;
             return this;
         }
 

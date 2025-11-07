@@ -25,7 +25,7 @@
             <version>2.1.35</version>
         </dependency>
 
-        <!-- JSON Processing -->
+        <!-- JSON Processing (used for both OpenAPI and AsyncAPI parsing) -->
         <dependency>
             <groupId>tools.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
@@ -80,49 +80,70 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- CryptoPro GOST Cryptography -->
-        <dependency>
-            <groupId>ru.cryptopro</groupId>
-            <artifactId>jcsp</artifactId>
-            <version>2.0.45549</version>
-        </dependency>
-        <dependency>
-            <groupId>ru.cryptopro</groupId>
-            <artifactId>jcp</artifactId>
-            <version>2.0.45549</version>
-        </dependency>
-        <dependency>
-            <groupId>ru.cryptopro</groupId>
-            <artifactId>cpssl</artifactId>
-            <version>2.0.45549</version>
-        </dependency>
-        <dependency>
-            <groupId>ru.cryptopro</groupId>
-            <artifactId>jcryptop</artifactId>
-            <version>2.0.45549</version>
-        </dependency>
-        <dependency>
-            <groupId>ru.cryptopro</groupId>
-            <artifactId>jcprevcheck</artifactId>
-            <version>2.0.45549</version>
-        </dependency>
-        <dependency>
-            <groupId>ru.cryptopro</groupId>
-            <artifactId>jcprevtools</artifactId>
-            <version>2.0.45549</version>
-        </dependency>
-        <dependency>
-            <groupId>ru.cryptopro</groupId>
-            <artifactId>asn1rt</artifactId>
-            <version>2.0.45549</version>
-        </dependency>
-        <dependency>
-            <groupId>ru.cryptopro</groupId>
-            <artifactId>asn1p</artifactId>
-            <version>2.0.45549</version>
-        </dependency>
-
     </dependencies>
+
+    <profiles>
+        <!-- CryptoPro GOST Cryptography Support Profile -->
+        <!-- This profile is optional and should only be activated when GOST TLS support is needed -->
+        <!-- These dependencies are not available in public Maven repositories -->
+        <!-- See core/src/main/java/active/http/ssl/README.md for installation instructions -->
+        <!--
+        To activate this profile, use one of the following:
+        1. Maven command: mvn clean install -Pcryptopro-gost
+        2. System property: mvn clean install -Dcryptopro.gost.enabled=true
+        -->
+        <profile>
+            <id>cryptopro-gost</id>
+            <activation>
+                <property>
+                    <name>cryptopro.gost.enabled</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>ru.cryptopro</groupId>
+                    <artifactId>jcsp</artifactId>
+                    <version>2.0.45549</version>
+                </dependency>
+                <dependency>
+                    <groupId>ru.cryptopro</groupId>
+                    <artifactId>jcp</artifactId>
+                    <version>2.0.45549</version>
+                </dependency>
+                <dependency>
+                    <groupId>ru.cryptopro</groupId>
+                    <artifactId>cpssl</artifactId>
+                    <version>2.0.45549</version>
+                </dependency>
+                <dependency>
+                    <groupId>ru.cryptopro</groupId>
+                    <artifactId>jcryptop</artifactId>
+                    <version>2.0.45549</version>
+                </dependency>
+                <dependency>
+                    <groupId>ru.cryptopro</groupId>
+                    <artifactId>jcprevcheck</artifactId>
+                    <version>2.0.45549</version>
+                </dependency>
+                <dependency>
+                    <groupId>ru.cryptopro</groupId>
+                    <artifactId>jcprevtools</artifactId>
+                    <version>2.0.45549</version>
+                </dependency>
+                <dependency>
+                    <groupId>ru.cryptopro</groupId>
+                    <artifactId>asn1rt</artifactId>
+                    <version>2.0.45549</version>
+                </dependency>
+                <dependency>
+                    <groupId>ru.cryptopro</groupId>
+                    <artifactId>asn1p</artifactId>
+                    <version>2.0.45549</version>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 
     <build>
         <plugins>

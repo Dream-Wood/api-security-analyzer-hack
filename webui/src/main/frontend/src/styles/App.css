@@ -61,7 +61,7 @@ code {
 }
 
 .sidebar {
-  width: 400px;
+  width: 450px;
   background-color: var(--bg-primary);
   border-right: 1px solid var(--border-color);
   overflow-y: auto;

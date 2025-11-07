@@ -3,7 +3,7 @@ package webui.model;
 import java.util.List;
 
 /**
- * Information about a vulnerability scanner for the UI.
+ * Информация о сканере уязвимостей для пользовательского интерфейса.
  */
 public record ScannerInfo(
     String id,

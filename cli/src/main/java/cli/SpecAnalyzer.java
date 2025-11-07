@@ -10,19 +10,34 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Service class that orchestrates loading and validation of OpenAPI specifications.
- * Handles both valid and invalid/incomplete specifications gracefully.
+ * Сервисный класс для загрузки и валидации OpenAPI спецификаций.
+ * Корректно обрабатывает как валидные, так и невалидные/неполные спецификации.
+ *
+ * <p>Класс выполняет следующие операции:
+ * <ul>
+ *   <li>Загрузка OpenAPI спецификации из файла или URL</li>
+ *   <li>Парсинг и валидация структуры спецификации</li>
+ *   <li>Статическая валидация контракта API</li>
+ *   <li>Сбор и возврат всех найденных проблем</li>
+ * </ul>
+ *
+ * @author API Security Analyzer Team
+ * @since 1.0
  */
 public final class SpecAnalyzer {
 
     private final OpenApiLoader loader;
 
+    /**
+     * Создает новый экземпляр анализатора спецификаций.
+     */
     public SpecAnalyzer() {
         this.loader = new OpenApiLoader();
     }
 
     /**
-     * Result of analyzing an OpenAPI specification.
+     * Результат анализа OpenAPI спецификации.
+     * Содержит информацию об успешности операции, сообщениях парсинга и найденных проблемах валидации.
      */
     public static final class AnalysisResult {
         private final boolean successful;
@@ -75,10 +90,17 @@ public final class SpecAnalyzer {
     }
 
     /**
-     * Analyzes an OpenAPI specification from a file path or URL.
+     * Анализирует OpenAPI спецификацию из файла или URL.
      *
-     * @param location file path (YAML/JSON) or URL to the OpenAPI specification
-     * @return analysis result containing parsing messages and validation findings
+     * <p>Метод выполняет следующие шаги:
+     * <ol>
+     *   <li>Загрузка спецификации из указанного источника</li>
+     *   <li>Парсинг и проверка корректности структуры</li>
+     *   <li>Статическая валидация контракта API</li>
+     * </ol>
+     *
+     * @param location путь к файлу (YAML/JSON) или URL OpenAPI спецификации
+     * @return результат анализа, содержащий сообщения парсинга и найденные проблемы валидации
      */
     public AnalysisResult analyze(String location) {
         Objects.requireNonNull(location, "location must not be null");

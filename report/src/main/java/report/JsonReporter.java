@@ -16,7 +16,47 @@ import java.time.Duration;
 import java.util.*;
 
 /**
- * JSON format reporter.
+ * Генератор отчетов в формате JSON для программной обработки результатов.
+ *
+ * <p>Создает структурированный JSON-документ со всеми результатами анализа,
+ * подходящий для:
+ * <ul>
+ *   <li>Интеграции с системами CI/CD (Jenkins, GitLab CI, GitHub Actions)</li>
+ *   <li>Автоматической обработки и агрегации результатов</li>
+ *   <li>Хранения результатов в базах данных</li>
+ *   <li>Создания дашбордов и визуализаций</li>
+ *   <li>Сравнения результатов между запусками</li>
+ * </ul>
+ *
+ * <p>JSON отчет включает:
+ * <ul>
+ *   <li>Метаинформацию: название спецификации, местоположение, время, режим</li>
+ *   <li>Статический анализ: список всех findings с деталями и группировкой по severity</li>
+ *   <li>Активный анализ: список уязвимостей с группировкой по severity и типу</li>
+ *   <li>Валидация контракта: список расхождений с группировкой по severity</li>
+ *   <li>Итоговую сводку: количество проблем по категориям</li>
+ * </ul>
+ *
+ * <p>Особенности формата:
+ * <ul>
+ *   <li>Использует pretty-print с отступами для читаемости</li>
+ *   <li>Временные метки в ISO-8601 формате (не Unix timestamp)</li>
+ *   <li>Все списки представлены как JSON arrays</li>
+ *   <li>Использует Jackson для сериализации</li>
+ * </ul>
+ *
+ * <p>Пример использования:
+ * <pre>{@code
+ * Reporter reporter = new JsonReporter();
+ * try (PrintWriter writer = new PrintWriter(new FileWriter("report.json"))) {
+ *     reporter.generate(analysisReport, writer);
+ * }
+ * }</pre>
+ *
+ * @author API Security Analyzer Team
+ * @since 1.0
+ * @see Reporter
+ * @see AnalysisReport
  */
 public final class JsonReporter implements Reporter {
 
@@ -33,6 +73,10 @@ public final class JsonReporter implements Reporter {
     public void generate(AnalysisReport report, PrintWriter writer) throws IOException {
         Map<String, Object> jsonReport = new LinkedHashMap<>();
 
+        // Include both title and location for complete information
+        if (report.getSpecTitle() != null && !report.getSpecTitle().isEmpty()) {
+            jsonReport.put("specTitle", report.getSpecTitle());
+        }
         jsonReport.put("specLocation", report.getSpecLocation());
         jsonReport.put("startTime", report.getStartTime().toString());
         jsonReport.put("endTime", report.getEndTime().toString());

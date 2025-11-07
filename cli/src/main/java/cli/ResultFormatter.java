@@ -9,7 +9,19 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Formats analysis results for console output.
+ * Форматтер результатов анализа для консольного вывода.
+ * Предоставляет красиво отформатированный вывод с поддержкой цветов ANSI и иконок.
+ *
+ * <p>Основные возможности:
+ * <ul>
+ *   <li>Цветной вывод с использованием ANSI escape-кодов (опционально)</li>
+ *   <li>Группировка найденных проблем по уровню критичности</li>
+ *   <li>Детальное отображение информации о каждой проблеме</li>
+ *   <li>Статистика по типам и количеству проблем</li>
+ * </ul>
+ *
+ * @author API Security Analyzer Team
+ * @since 1.0
  */
 public final class ResultFormatter {
 
@@ -34,7 +46,11 @@ public final class ResultFormatter {
     }
 
     /**
-     * Formats and prints the complete analysis result.
+     * Форматирует и выводит полный результат анализа.
+     * Включает заголовок, сообщения парсинга, найденные проблемы валидации и статистику.
+     *
+     * @param result результат анализа спецификации
+     * @param location путь или URL к анализируемой спецификации
      */
     public void printResult(SpecAnalyzer.AnalysisResult result, String location) {
         printHeader("API Security Analyzer");

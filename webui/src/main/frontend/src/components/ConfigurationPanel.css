@@ -1,6 +1,6 @@
 .configuration-panel {
   height: 100%;
-  overflow-y: auto;
+  overflow-y: visible;
 }
 
 .configuration-panel h2 {

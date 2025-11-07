@@ -9,7 +9,7 @@ import webui.service.AnalysisService;
 import java.util.List;
 
 /**
- * Controller for scanner information endpoints.
+ * Контроллер для эндпоинтов получения информации о сканерах.
  */
 @RestController
 @RequestMapping("/api/scanners")
@@ -22,7 +22,7 @@ public class ScannerController {
     }
 
     /**
-     * Get all available scanners.
+     * Получение списка всех доступных сканеров.
      * GET /api/scanners
      */
     @GetMapping

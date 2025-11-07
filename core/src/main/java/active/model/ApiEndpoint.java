@@ -5,7 +5,8 @@ import model.ParameterSpec;
 import java.util.*;
 
 /**
- * Represents an API endpoint to be tested for vulnerabilities.
+ * Представляет эндпоинт API для тестирования на уязвимости.
+ * Содержит информацию о пути, методе, параметрах и требованиях безопасности.
  */
 public final class ApiEndpoint {
     private final String path;

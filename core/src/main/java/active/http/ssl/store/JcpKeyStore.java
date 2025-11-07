@@ -1,8 +1,7 @@
 package active.http.ssl.store;
 
-import ru.CryptoPro.JCP.JCP;
-
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -13,14 +12,19 @@ import java.util.UUID;
 import java.util.logging.Logger;
 
 /**
- * JCP KeyStore implementation for storing GOST certificates.
+ * Реализация JCP KeyStore для хранения ГОСТ сертификатов.
  *
- * <p>This class creates a JCP-based keystore and populates it with trusted
- * certificates from the system's cacerts store. The JCP keystore is used
- * for GOST TLS operations.
+ * <p>Этот класс создает хранилище ключей на основе JCP и заполняет его доверенными
+ * сертификатами из системного хранилища cacerts. JCP хранилище используется
+ * для операций GOST TLS.
+ *
+ * <p><b>Примечание:</b> Этот класс требует наличия библиотек CryptoPro JCP.
+ * Если библиотеки не найдены, будет выброшено RuntimeException.
  */
 public final class JcpKeyStore {
     private static final Logger logger = Logger.getLogger(JcpKeyStore.class.getName());
+    private static final String JCP_CLASS_NAME = "ru.CryptoPro.JCP.JCP";
+    private static final String CERT_STORE_NAME_FIELD = "CERT_STORE_NAME";
 
     private final CacertsStore cacertsStore;
 
@@ -29,20 +33,21 @@ public final class JcpKeyStore {
     }
 
     /**
-     * Prepare JCP KeyStore with GOST certificates from cacerts.
+     * Подготовить JCP KeyStore с ГОСТ сертификатами из cacerts.
      *
-     * <p>Creates a new JCP KeyStore instance, loads it, and populates it
-     * with all trusted certificates from the system's cacerts store.
+     * <p>Создает новый экземпляр JCP KeyStore, загружает его и заполняет
+     * всеми доверенными сертификатами из системного хранилища cacerts.
      *
-     * @return KeyStore instance with JCP type containing trusted certificates
-     * @throws RuntimeException if keystore cannot be created or loaded
+     * @return экземпляр KeyStore с типом JCP, содержащий доверенные сертификаты
+     * @throws RuntimeException если хранилище не может быть создано или загружено
      */
     public KeyStore prepareKeyStoreWithJcpCertificates() {
         KeyStore keyStore;
 
         try {
-            keyStore = KeyStore.getInstance(JCP.CERT_STORE_NAME);
-            logger.info("Created JCP KeyStore with type: " + JCP.CERT_STORE_NAME);
+            String certStoreName = getCertStoreName();
+            keyStore = KeyStore.getInstance(certStoreName);
+            logger.info("Created JCP KeyStore with type: " + certStoreName);
         } catch (KeyStoreException exception) {
             logger.severe("Failed to create JCP KeyStore: " + exception.getMessage());
             throw new RuntimeException(
@@ -81,5 +86,31 @@ public final class JcpKeyStore {
         }
 
         return keyStore;
+    }
+
+    /**
+     * Получить значение константы JCP CERT_STORE_NAME используя рефлексию.
+     *
+     * @return имя хранилища сертификатов
+     * @throws RuntimeException если класс CryptoPro JCP недоступен
+     */
+    private String getCertStoreName() {
+        try {
+            Class<?> jcpClass = Class.forName(JCP_CLASS_NAME);
+            Field field = jcpClass.getField(CERT_STORE_NAME_FIELD);
+            return (String) field.get(null);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(
+                "CryptoPro JCP library not found. " +
+                "Class " + JCP_CLASS_NAME + " is not available in classpath. " +
+                "Please install CryptoPro JCP libraries to use GOST cryptography.",
+                e
+            );
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(
+                "Failed to access " + CERT_STORE_NAME_FIELD + " from " + JCP_CLASS_NAME,
+                e
+            );
+        }
     }
 }

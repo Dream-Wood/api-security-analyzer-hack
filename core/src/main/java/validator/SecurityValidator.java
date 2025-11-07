@@ -10,7 +10,17 @@ import parser.SpecNormalizer;
 import java.util.*;
 
 /**
- * Security-focused validator that checks for common API security issues.
+ * Валидатор безопасности, проверяющий распространенные проблемы безопасности API.
+ *
+ * <p>Проверяемые аспекты безопасности:
+ * <ul>
+ *   <li>Наличие и корректность схем аутентификации</li>
+ *   <li>Использование HTTPS вместо HTTP</li>
+ *   <li>Выявление небезопасных методов аутентификации (Basic Auth)</li>
+ *   <li>Обнаружение API ключей в query параметрах</li>
+ *   <li>Проверка защиты критичных операций (POST, PUT, DELETE)</li>
+ *   <li>Выявление потенциальных IDOR уязвимостей</li>
+ * </ul>
  */
 public final class SecurityValidator implements ContractValidator {
 

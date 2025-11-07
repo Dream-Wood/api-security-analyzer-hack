@@ -17,8 +17,16 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Standard HTTP client implementation using java.net.HttpURLConnection with SSL/TLS support.
- * This implementation doesn't require external dependencies.
+ * Стандартная реализация HTTP клиента используя java.net.HttpURLConnection с поддержкой SSL/TLS.
+ * Эта реализация не требует внешних зависимостей.
+ *
+ * <p>Основные возможности:
+ * <ul>
+ *   <li>Поддержка HTTP/HTTPS протоколов</li>
+ *   <li>Поддержка нестандартных методов (PATCH через X-HTTP-Method-Override)</li>
+ *   <li>Настраиваемые таймауты и SSL</li>
+ *   <li>Автоматическое чтение тела ответа для ошибок</li>
+ * </ul>
  */
 public final class StandardHttpClient implements HttpClient {
     private static final Logger logger = Logger.getLogger(StandardHttpClient.class.getName());
@@ -98,7 +106,19 @@ public final class StandardHttpClient implements HttpClient {
 
         } catch (IOException e) {
             long responseTime = System.currentTimeMillis() - startTime;
-            logger.log(Level.WARNING, "Request failed: " + request, e);
+
+            // Provide detailed error message for common issues
+            String errorMsg = "Request failed: " + request.getMethod() + " " + request.getFullUrl();
+            if (e.getMessage() != null) {
+                if (e.getMessage().contains("Illegal character")) {
+                    errorMsg += " - Illegal character in URL or headers. URL may contain unencoded special characters.";
+                } else if (e.getMessage().contains("MalformedURL")) {
+                    errorMsg += " - Malformed URL. Check for unsubstituted path parameters or invalid characters.";
+                } else {
+                    errorMsg += " - " + e.getMessage();
+                }
+            }
+            logger.log(Level.WARNING, errorMsg, e);
 
             return TestResponse.builder()
                 .statusCode(0)
@@ -124,13 +144,16 @@ public final class StandardHttpClient implements HttpClient {
     }
 
     /**
-     * Set request method with support for PATCH and other non-standard methods.
+     * Установить метод запроса с поддержкой PATCH и других нестандартных методов.
      *
-     * <p>HttpURLConnection doesn't support PATCH by default. For PATCH requests,
-     * we use POST method with X-HTTP-Method-Override header as a fallback.
-     * This is a standard approach supported by many REST APIs.
+     * <p>HttpURLConnection не поддерживает PATCH по умолчанию. Для PATCH запросов
+     * используется POST метод с заголовком X-HTTP-Method-Override как fallback.
+     * Это стандартный подход, поддерживаемый многими REST API.
      *
-     * @return the actual method that was set (may differ from requested for PATCH)
+     * @param connection HTTP соединение
+     * @param method HTTP метод
+     * @return фактический установленный метод (может отличаться от запрошенного для PATCH)
+     * @throws IOException если не удалось установить метод
      */
     private String setRequestMethod(HttpURLConnection connection, String method) throws IOException {
         try {
@@ -187,8 +210,8 @@ public final class StandardHttpClient implements HttpClient {
     }
 
     /**
-     * Configure the SSL context to accept all certificates (INSECURE).
-     * This should only be used for testing purposes.
+     * Настроить SSL контекст для принятия всех сертификатов (НЕБЕЗОПАСНО).
+     * Должно использоваться только для целей тестирования.
      */
     private void configureInsecureSSL() {
         try {

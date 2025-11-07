@@ -8,7 +8,8 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * Result of a vulnerability scan on an API endpoint.
+ * Результат сканирования уязвимостей на эндпоинте API.
+ * Содержит информацию о статусе сканирования, найденных уязвимостях и метриках.
  */
 public final class ScanResult {
     private final String scannerId;

@@ -16,7 +16,41 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Console-based reporter with colored output.
+ * Генератор отчетов для консольного вывода с поддержкой ANSI цветов.
+ *
+ * <p>Предназначен для интерактивной работы с результатами анализа в терминале.
+ * Использует ANSI escape-последовательности для цветового выделения различных
+ * элементов отчета:
+ * <ul>
+ *   <li>Красный - критические и высокие уязвимости</li>
+ *   <li>Желтый - средние уязвимости и предупреждения</li>
+ *   <li>Синий - низкие уязвимости и информационные сообщения</li>
+ *   <li>Зеленый - рекомендации и успешные результаты</li>
+ *   <li>Серый - вспомогательная информация (ID, метаданные)</li>
+ * </ul>
+ *
+ * <p>Отчет структурирован по разделам:
+ * <ol>
+ *   <li>Заголовок с информацией о спецификации и режиме анализа</li>
+ *   <li>Результаты статического анализа (если есть)</li>
+ *   <li>Результаты активного тестирования (если есть)</li>
+ *   <li>Результаты валидации контракта (если есть)</li>
+ *   <li>Итоговая сводка по всем найденным проблемам</li>
+ * </ol>
+ *
+ * <p>Цветной вывод можно отключить, передав {@code false} в конструктор,
+ * что полезно для перенаправления вывода в файлы или систем без поддержки ANSI.
+ *
+ * <p>Пример использования:
+ * <pre>{@code
+ * Reporter reporter = new ConsoleReporter(true); // С цветами
+ * reporter.generate(analysisReport, new PrintWriter(System.out));
+ * }</pre>
+ *
+ * @author API Security Analyzer Team
+ * @since 1.0
+ * @see Reporter
+ * @see AnalysisReport
  */
 public final class ConsoleReporter implements Reporter {
 
@@ -42,7 +76,12 @@ public final class ConsoleReporter implements Reporter {
     @Override
     public void generate(AnalysisReport report, PrintWriter writer) throws IOException {
         printHeader(writer, "API Security Analyzer");
-        writer.println("Analyzing: " + report.getSpecLocation());
+
+        // Show spec title if available, otherwise show location
+        String specDisplay = report.getSpecTitle() != null && !report.getSpecTitle().isEmpty()
+            ? report.getSpecTitle()
+            : report.getSpecLocation();
+        writer.println("Analyzing: " + specDisplay);
         writer.println("Mode: " + colorize(report.getMode().toString(), ANSI_CYAN));
 
         Duration duration = Duration.between(report.getStartTime(), report.getEndTime());

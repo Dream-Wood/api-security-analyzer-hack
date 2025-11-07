@@ -3,7 +3,7 @@ package webui.model;
 import java.util.List;
 
 /**
- * Request model for starting an analysis.
+ * Модель запроса для запуска анализа безопасности.
  */
 public record AnalysisRequest(
     String specLocation,
@@ -20,7 +20,10 @@ public record AnalysisRequest(
     boolean autoAuth,
     boolean createTestUsers,
     Integer maxParallelScans,
-    List<String> enabledScanners // List of scanner IDs to enable (null = all enabled)
+    List<String> enabledScanners, // List of scanner IDs to enable (null = all enabled)
+    String scanIntensity,  // Scan intensity: "low", "medium", "high", "aggressive"
+    Integer requestDelayMs, // Custom request delay in ms (overrides intensity default)
+    List<UserCredentials> testUsers // List of test user credentials for BOLA/privilege testing
 ) {
     public AnalysisRequest {
         // Default values
@@ -29,6 +32,9 @@ public record AnalysisRequest(
         }
         if (cryptoProtocol == null || cryptoProtocol.isEmpty()) {
             cryptoProtocol = "standard";
+        }
+        if (scanIntensity == null || scanIntensity.isEmpty()) {
+            scanIntensity = "medium";
         }
     }
 }

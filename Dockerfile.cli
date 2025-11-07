@@ -1,0 +1,89 @@
+# API Security Analyzer - CLI Docker Image
+# Минимальный образ для запуска анализа через командную строку
+
+# Этап 1: Сборка приложения
+FROM maven:3.9-eclipse-temurin-25 AS builder
+
+LABEL maintainer="API Security Analyzer Team"
+LABEL description="CLI version of API Security Analyzer"
+
+# Установка рабочей директории
+WORKDIR /build
+
+# Копирование файлов проекта
+# Копируем все модули, чтобы Maven мог прочитать parent POM
+COPY pom.xml .
+COPY core ./core
+COPY report ./report
+COPY cli ./cli
+COPY plugins ./plugins
+COPY webui/pom.xml ./webui/pom.xml
+
+# Сборка проекта (без WebUI для минимизации размера)
+# Собираем только нужные модули: core, report, cli, plugins
+RUN mvn clean package -pl core,report,cli,plugins -am -Pskip-frontend -DskipTests
+
+# Этап 2: Создание финального образа
+FROM eclipse-temurin:25-jre-alpine
+
+LABEL maintainer="API Security Analyzer Team"
+LABEL version="1.0"
+LABEL description="Lightweight CLI for API security analysis"
+
+# Установка необходимых пакетов
+RUN apk add --no-cache \
+    bash \
+    curl \
+    ca-certificates
+
+# Создание пользователя для запуска приложения
+RUN addgroup -g 1000 analyzer && \
+    adduser -D -u 1000 -G analyzer analyzer
+
+# Создание директорий
+RUN mkdir -p /app /specs /reports /certs && \
+    chown -R analyzer:analyzer /app /specs /reports /certs
+
+# Переключение на пользователя
+USER analyzer
+
+# Установка рабочей директории
+WORKDIR /app
+
+# Копирование JAR файла из builder
+# JAR файл называется api-security-analyzer.jar (см. finalName в pom.xml)
+COPY --from=builder --chown=analyzer:analyzer /build/cli/target/api-security-analyzer.jar /app/cli.jar
+
+# Копирование плагинов сканеров
+COPY --from=builder --chown=analyzer:analyzer /build/plugins/scanner-*.jar /app/plugins/
+
+# Копирование и настройка entrypoint скрипта
+COPY --chown=analyzer:analyzer docker/entrypoint-cli.sh /app/entrypoint.sh
+USER root
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+USER analyzer
+
+# Установка переменных окружения
+ENV JAVA_OPTS="-Xms256m -Xmx2g" \
+    ANALYZER_HOME=/app
+
+# Volumes для спецификаций, отчетов и сертификатов
+VOLUME ["/specs", "/reports", "/certs"]
+
+# Точка входа - bash скрипт для гибкого управления
+ENTRYPOINT ["/app/entrypoint.sh"]
+
+# Команда по умолчанию (показать помощь)
+CMD ["--help"]
+
+# Healthcheck (опциональный, для случаев использования в оркестраторах)
+# Проверяет, что JVM запущена
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD ps aux | grep -q '[j]ava' || exit 1
+
+# Метаданные
+LABEL org.opencontainers.image.title="API Security Analyzer CLI"
+LABEL org.opencontainers.image.description="Command-line interface for API security analysis"
+LABEL org.opencontainers.image.version="1.0-SNAPSHOT"
+LABEL org.opencontainers.image.vendor="API Security Analyzer Team"
+LABEL org.opencontainers.image.licenses="Proprietary"

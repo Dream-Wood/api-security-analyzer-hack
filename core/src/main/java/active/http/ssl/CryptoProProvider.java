@@ -9,27 +9,27 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
- * Utility class for managing CryptoPro security providers.
+ * Утилитарный класс для управления провайдерами безопасности CryptoPro.
  *
- * <p>This class handles registration and verification of CryptoPro JCSP providers
- * required for GOST cryptography operations.
+ * <p>Этот класс обрабатывает регистрацию и проверку провайдеров CryptoPro JCSP,
+ * необходимых для операций криптографии ГОСТ.
  *
- * <p><b>Required CryptoPro libraries:</b>
+ * <p><b>Необходимые библиотеки CryptoPro:</b>
  * <ul>
  *   <li>JCP (Java Crypto Provider) - ru.CryptoPro.JCP.JCP</li>
  *   <li>SSL Provider - ru.CryptoPro.ssl.Provider</li>
  *   <li>Crypto Provider - ru.CryptoPro.Crypto.CryptoProvider</li>
- *   <li>RevCheck (optional) - ru.CryptoPro.reprov.RevCheck</li>
+ *   <li>RevCheck (опционально) - ru.CryptoPro.reprov.RevCheck</li>
  * </ul>
  *
- * <p><b>Usage:</b>
+ * <p><b>Использование:</b>
  * <pre>
- * // Initialize all required providers
+ * // Инициализировать все необходимые провайдеры
  * CryptoProProvider.initialize();
  *
- * // Check if providers are available
+ * // Проверить доступность провайдеров
  * if (CryptoProProvider.isAvailable()) {
- *     // Use GOST cryptography
+ *     // Использовать ГОСТ криптографию
  * }
  * </pre>
  */
@@ -39,20 +39,20 @@ public final class CryptoProProvider {
     private static volatile boolean initialized = false;
 
     /**
-     * CryptoPro provider types.
+     * Типы провайдеров CryptoPro.
      */
     public enum ProviderType {
-        /** Main Java Crypto Provider */
+        /** Основной Java Crypto Provider */
         JCP("ru.CryptoPro.JCP.JCP", true),
         JCSP("ru.CryptoPro.JCSP.JCSP", true),
 
-        /** SSL/TLS Provider for GOST protocols */
+        /** SSL/TLS Provider для протоколов ГОСТ */
         SSL("ru.CryptoPro.ssl.Provider", true),
 
-        /** Additional Crypto Operations Provider */
+        /** Провайдер дополнительных криптографических операций */
         CRYPTO("ru.CryptoPro.Crypto.CryptoProvider", true),
 
-        /** Certificate Revocation Check Provider (optional) */
+        /** Провайдер проверки отзыва сертификатов (опционально) */
         REVCHECK("ru.CryptoPro.reprov.RevCheck", false);
 
         private final String className;
@@ -77,10 +77,10 @@ public final class CryptoProProvider {
     }
 
     /**
-     * Initialize all CryptoPro security providers.
-     * This method is idempotent and can be called multiple times safely.
+     * Инициализировать все провайдеры безопасности CryptoPro.
+     * Этот метод идемпотентен и может быть вызван несколько раз безопасно.
      *
-     * @throws RuntimeException if required providers cannot be loaded
+     * @throws RuntimeException если необходимые провайдеры не могут быть загружены
      */
     public static synchronized void initialize() {
         if (initialized) {
@@ -116,10 +116,10 @@ public final class CryptoProProvider {
     }
 
     /**
-     * Register a specific CryptoPro provider.
+     * Зарегистрировать конкретный провайдер CryptoPro.
      *
-     * @param type the provider type to register
-     * @throws ProviderRegistrationException if provider cannot be registered
+     * @param type тип провайдера для регистрации
+     * @throws ProviderRegistrationException если провайдер не может быть зарегистрирован
      */
     public static void registerProvider(ProviderType type) throws ProviderRegistrationException {
         try {
@@ -162,10 +162,10 @@ public final class CryptoProProvider {
     }
 
     /**
-     * Check if CryptoPro providers are available.
-     * This checks if the main JCP provider class can be loaded.
+     * Проверить, доступны ли провайдеры CryptoPro.
+     * Проверяет, может ли быть загружен основной класс провайдера JCP.
      *
-     * @return true if CryptoPro is available, false otherwise
+     * @return true если CryptoPro доступен, false в противном случае
      */
     public static boolean isAvailable() {
         try {
@@ -177,10 +177,10 @@ public final class CryptoProProvider {
     }
 
     /**
-     * Check if a specific provider type is available.
+     * Проверить, доступен ли конкретный тип провайдера.
      *
-     * @param type the provider type to check
-     * @return true if available, false otherwise
+     * @param type тип провайдера для проверки
+     * @return true если доступен, false в противном случае
      */
     public static boolean isProviderAvailable(ProviderType type) {
         try {
@@ -192,10 +192,10 @@ public final class CryptoProProvider {
     }
 
     /**
-     * Check if a specific provider is registered.
+     * Проверить, зарегистрирован ли конкретный провайдер.
      *
-     * @param type the provider type to check
-     * @return true if registered, false otherwise
+     * @param type тип провайдера для проверки
+     * @return true если зарегистрирован, false в противном случае
      */
     public static boolean isProviderRegistered(ProviderType type) {
         try {
@@ -208,9 +208,9 @@ public final class CryptoProProvider {
     }
 
     /**
-     * Get all registered CryptoPro providers.
+     * Получить все зарегистрированные провайдеры CryptoPro.
      *
-     * @return list of registered CryptoPro provider names
+     * @return список имен зарегистрированных провайдеров CryptoPro
      */
     public static List<String> getRegisteredProviders() {
         return Arrays.stream(ProviderType.values())
@@ -229,16 +229,16 @@ public final class CryptoProProvider {
     }
 
     /**
-     * Check if CryptoPro providers have been initialized.
+     * Проверить, были ли инициализированы провайдеры CryptoPro.
      *
-     * @return true if initialized, false otherwise
+     * @return true если инициализированы, false в противном случае
      */
     public static boolean isInitialized() {
         return initialized;
     }
 
     /**
-     * Log all registered security providers for debugging.
+     * Логировать все зарегистрированные провайдеры безопасности для отладки.
      */
     private static void logRegisteredProviders() {
         Provider[] providers = Security.getProviders();
@@ -256,7 +256,7 @@ public final class CryptoProProvider {
     }
 
     /**
-     * Exception thrown when provider registration fails.
+     * Исключение, выбрасываемое при ошибке регистрации провайдера.
      */
     public static class ProviderRegistrationException extends Exception {
         public ProviderRegistrationException(String message) {

@@ -3,12 +3,15 @@ package active.scanner;
 import java.util.*;
 
 /**
- * Configuration for a vulnerability scanner.
+ * Конфигурация для сканера уязвимостей.
+ * Определяет параметры сканирования, такие как интенсивность, таймауты и лимиты тестов.
  */
 public final class ScannerConfig {
     private final boolean enabled;
     private final int maxTestsPerEndpoint;
     private final int timeoutSeconds;
+    private final ScanIntensity intensity;
+    private final int requestDelayMs;
     private final Map<String, Object> customSettings;
 
     private ScannerConfig(Builder builder) {
@@ -19,6 +22,10 @@ public final class ScannerConfig {
         this.timeoutSeconds = builder.timeoutSeconds > 0
             ? builder.timeoutSeconds
             : 30;
+        this.intensity = builder.intensity != null ? builder.intensity : ScanIntensity.MEDIUM;
+        this.requestDelayMs = builder.requestDelayMs >= 0
+            ? builder.requestDelayMs
+            : this.intensity.getRequestDelayMs();
         this.customSettings = builder.customSettings != null
             ? Collections.unmodifiableMap(new HashMap<>(builder.customSettings))
             : Collections.emptyMap();
@@ -52,10 +59,20 @@ public final class ScannerConfig {
         return Optional.ofNullable(customSettings.get(key));
     }
 
+    public ScanIntensity getIntensity() {
+        return intensity;
+    }
+
+    public int getRequestDelayMs() {
+        return requestDelayMs;
+    }
+
     public static class Builder {
         private boolean enabled = true;
         private int maxTestsPerEndpoint = 50;
         private int timeoutSeconds = 30;
+        private ScanIntensity intensity;
+        private int requestDelayMs = -1; // -1 means use intensity default
         private Map<String, Object> customSettings;
 
         public Builder enabled(boolean enabled) {
@@ -70,6 +87,16 @@ public final class ScannerConfig {
 
         public Builder timeoutSeconds(int timeoutSeconds) {
             this.timeoutSeconds = timeoutSeconds;
+            return this;
+        }
+
+        public Builder intensity(ScanIntensity intensity) {
+            this.intensity = intensity;
+            return this;
+        }
+
+        public Builder requestDelayMs(int requestDelayMs) {
+            this.requestDelayMs = requestDelayMs;
             return this;
         }
 
