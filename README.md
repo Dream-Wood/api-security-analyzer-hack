@@ -1026,4 +1026,4 @@ mvn exec:java -Dexec.args="-m static ../../examples/petstore.yaml"
 
 ---
 
-**Сделано с ❤️ командой devnull**
+**Сделано с ❤️ командой devnull.**
