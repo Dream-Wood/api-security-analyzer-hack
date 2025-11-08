@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../services/api';
+import { VulnerabilityChart } from './VulnerabilityChart';
 import './ResultsPanel.css';
 
 interface ResultsPanelProps {
@@ -204,6 +205,14 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
               )}
             </div>
           </div>
+        )}
+
+        {/* Vulnerability Distribution Chart - Summary */}
+        {vulnerabilities.length > 0 && (
+          <VulnerabilityChart
+            vulnerabilities={vulnerabilities}
+            title="Vulnerability Types Distribution"
+          />
         )}
 
         {/* Endpoints with Vulnerabilities */}
@@ -578,6 +587,14 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
               </div>
             </div>
 
+            {/* Vulnerability Distribution Chart - Active */}
+            <div style={{ marginBottom: 'var(--spacing-lg)' }}>
+              <VulnerabilityChart
+                vulnerabilities={vulnerabilities}
+                title="Vulnerability Types Distribution"
+              />
+            </div>
+
             <div className="endpoints-vulnerability-list">
               {endpointGroups.map((endpointGroup, index) => {
                 const endpointKey = `${endpointGroup.method}-${endpointGroup.path}`;
@@ -741,12 +758,19 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
 
     const contractReport = report.contractResult?.report;
 
-    // Get divergences from divergencesBySeverity
+    // Get divergences from results (each ValidationResult has endpoint, method, and divergences)
     const allDivergences: any[] = [];
-    if (contractReport?.divergencesBySeverity) {
-      Object.values(contractReport.divergencesBySeverity).forEach((divArray: any) => {
-        if (Array.isArray(divArray)) {
-          allDivergences.push(...divArray);
+    if (contractReport?.results && Array.isArray(contractReport.results)) {
+      contractReport.results.forEach((result: any) => {
+        if (result.divergences && Array.isArray(result.divergences)) {
+          // Add endpoint and method information to each divergence
+          result.divergences.forEach((div: any) => {
+            allDivergences.push({
+              ...div,
+              path: div.path || result.endpoint,  // Use endpoint from ValidationResult if div.path is missing
+              method: div.method || result.method  // Use method from ValidationResult if div.method is missing
+            });
+          });
         }
       });
     }
@@ -792,13 +816,6 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
           </div>
         </div>
 
-        {contractReport?.summary && (
-          <div style={{backgroundColor: '#f3f4f6', padding: '15px', borderRadius: '8px', marginBottom: '20px'}}>
-            <pre style={{fontSize: '13px', fontFamily: 'monospace', margin: 0, whiteSpace: 'pre-wrap'}}>
-              {contractReport.summary}
-            </pre>
-          </div>
-        )}
 
         {allDivergences.length === 0 ? (
           <p className="success-message">✓ No divergences found - All endpoints match specification!</p>
@@ -932,121 +949,28 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
           {report && sessionId && (
             <div style={{ position: 'relative' }}>
               <button
+                className="download-button"
                 onClick={() => setShowFormatMenu(!showFormatMenu)}
                 disabled={isDownloading}
-                onMouseEnter={(e) => {
-                  if (!isDownloading) {
-                    e.currentTarget.style.backgroundColor = '#2563eb';
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                    e.currentTarget.style.boxShadow = '0 4px 6px rgba(59, 130, 246, 0.3)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#3b82f6';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
-                }}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#3b82f6',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: isDownloading ? 'not-allowed' : 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  opacity: isDownloading ? 0.6 : 1,
-                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-                  transition: 'all 0.2s ease',
-                  whiteSpace: 'nowrap'
-                }}
               >
-                <span style={{ fontSize: '16px' }}>📥</span>
+                <span className="download-icon">📥</span>
                 <span>{isDownloading ? 'Downloading...' : 'Download Report'}</span>
-                {!isDownloading && <span style={{ fontSize: '12px' }}>▼</span>}
+                {!isDownloading && <span className="download-arrow">▼</span>}
               </button>
               {showFormatMenu && !isDownloading && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: '100%',
-                    right: 0,
-                    marginTop: '8px',
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '8px',
-                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
-                    zIndex: 1000,
-                    minWidth: '200px',
-                    overflow: 'hidden'
-                  }}
-                >
-                  <button
-                    onClick={() => handleDownload('PDF')}
-                    style={{
-                      width: '100%',
-                      padding: '12px 16px',
-                      backgroundColor: 'transparent',
-                      border: 'none',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      color: '#1f2937',
-                      fontWeight: '500',
-                      borderBottom: '1px solid #e5e7eb',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      transition: 'background-color 0.15s ease'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = '#eff6ff';
-                      e.currentTarget.style.color = '#2563eb';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                      e.currentTarget.style.color = '#1f2937';
-                    }}
-                  >
-                    <span style={{ fontSize: '18px' }}>📄</span>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div className="download-menu">
+                  <button className="download-menu-item" onClick={() => handleDownload('PDF')}>
+                    <span className="menu-icon">📄</span>
+                    <div className="menu-content">
                       <span>PDF Report</span>
-                      <span style={{ fontSize: '11px', opacity: 0.7 }}>Full report with charts</span>
+                      <span className="menu-description">Full report with charts</span>
                     </div>
                   </button>
-                  <button
-                    onClick={() => handleDownload('JSON')}
-                    style={{
-                      width: '100%',
-                      padding: '12px 16px',
-                      backgroundColor: 'transparent',
-                      border: 'none',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      color: '#1f2937',
-                      fontWeight: '500',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      transition: 'background-color 0.15s ease'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = '#eff6ff';
-                      e.currentTarget.style.color = '#2563eb';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                      e.currentTarget.style.color = '#1f2937';
-                    }}
-                  >
-                    <span style={{ fontSize: '18px' }}>📊</span>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <button className="download-menu-item" onClick={() => handleDownload('JSON')}>
+                    <span className="menu-icon">📊</span>
+                    <div className="menu-content">
                       <span>JSON Format</span>
-                      <span style={{ fontSize: '11px', opacity: 0.7 }}>Structured data</span>
+                      <span className="menu-description">Structured data</span>
                     </div>
                   </button>
                 </div>

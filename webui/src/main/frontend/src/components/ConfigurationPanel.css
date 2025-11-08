@@ -7,6 +7,11 @@
   margin-top: 0;
   margin-bottom: var(--spacing-lg);
   font-size: 1.5rem;
+  background: linear-gradient(135deg, var(--primary-color) 0%, #1d4ed8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: fadeIn 0.5s ease-out;
 }
 
 .configuration-panel h3 {
@@ -14,8 +19,10 @@
   margin-bottom: var(--spacing-md);
   font-size: 1.1rem;
   color: var(--text-primary);
-  border-bottom: 2px solid var(--border-color);
+  border-bottom: 2px solid transparent;
+  border-image: linear-gradient(90deg, var(--primary-color), transparent) 1;
   padding-bottom: var(--spacing-xs);
+  animation: fadeIn 0.5s ease-out;
 }
 
 .configuration-panel h4 {
@@ -77,6 +84,13 @@
   background-color: var(--bg-primary);
   border-radius: var(--border-radius);
   border: 1px solid var(--border-color);
+  transition: all 0.3s ease;
+}
+
+.scanner-item:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
+  transform: translateX(2px);
 }
 
 .scanner-item .checkbox-group {

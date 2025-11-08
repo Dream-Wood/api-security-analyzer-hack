@@ -206,7 +206,7 @@ public final class ContractValidationEngine {
         private final boolean fuzzingEnabled;
         private final Map<String, Object> statistics;
 
-        private ContractValidationReport(
+        public ContractValidationReport(
             List<ValidationResult> results,
             Instant startTime,
             Instant endTime,

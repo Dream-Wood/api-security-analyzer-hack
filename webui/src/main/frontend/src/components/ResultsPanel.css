@@ -30,24 +30,34 @@
 }
 
 .results-tabs button {
-  padding: var(--spacing-sm) var(--spacing-md);
-  background-color: transparent;
-  color: var(--text-secondary);
-  border: 1px solid transparent;
-  border-radius: var(--border-radius);
-  cursor: pointer;
-  transition: all 0.2s;
+  padding: var(--spacing-sm) var(--spacing-md) !important;
+  background: #e5e7eb !important;
+  color: #6b7280 !important;
+  border: 1px solid #d1d5db !important;
+  border-radius: var(--border-radius) !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
 }
 
-.results-tabs button:hover {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
+.results-tabs button::before {
+  display: none !important;
+}
+
+.results-tabs button:hover:not(.active) {
+  background: #d1d5db !important;
+  border-color: var(--primary-color) !important;
+  color: var(--text-primary) !important;
+  filter: none !important;
+  transform: none !important;
 }
 
 .results-tabs button.active {
-  background-color: var(--primary-color);
-  color: white;
-  border-color: var(--primary-color);
+  background: var(--primary-color) !important;
+  color: white !important;
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2) !important;
 }
 
 .results-content {
@@ -926,4 +936,138 @@
 
 .endpoint-vulnerability-item:hover::after {
   opacity: 1;
+}
+
+/* Download Button Unified Styles */
+.download-button {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, var(--primary-color) 0%, #1d4ed8 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+}
+
+.download-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.download-button:hover::before {
+  left: 100%;
+}
+
+.download-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+}
+
+.download-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.download-button:disabled {
+  background: linear-gradient(135deg, var(--secondary-color) 0%, #475569 100%);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.download-icon {
+  font-size: 16px;
+}
+
+.download-arrow {
+  font-size: 12px;
+  transition: transform 0.3s ease;
+}
+
+.download-button:hover .download-arrow {
+  transform: translateY(2px);
+}
+
+/* Download Menu Styles */
+.download-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background-color: white;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 200px;
+  overflow: hidden;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.download-menu-item {
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.2s ease;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.download-menu-item:last-child {
+  border-bottom: none;
+}
+
+.download-menu-item:hover {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  color: var(--primary-color);
+  transform: translateX(4px);
+}
+
+.menu-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.menu-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.menu-description {
+  font-size: 11px;
+  opacity: 0.7;
+  font-weight: 400;
 }

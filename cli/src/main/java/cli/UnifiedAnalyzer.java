@@ -196,8 +196,7 @@ public final class UnifiedAnalyzer {
             config.getMode() == AnalysisReport.AnalysisMode.FULL) {
 
             logger.info("Performing static analysis");
-            config.getProgressListener().onPhaseChange("static-analysis", 3);
-            config.getProgressListener().onStepComplete(1, "Running static analysis on OpenAPI spec...");
+            config.getProgressListener().onLog("INFO", "Starting static analysis...");
             AnalysisReport.StaticAnalysisResult staticResult = performStaticAnalysis(
                 openAPI, loadResult.getMessages());
             reportBuilder.staticResult(staticResult);
@@ -242,7 +241,6 @@ public final class UnifiedAnalyzer {
                 reportBuilder.contractResult(new AnalysisReport.ContractAnalysisResult(null, error));
             } else {
                 logger.info("Performing contract validation against: " + baseUrl);
-                config.getProgressListener().onPhaseChange("contract-validation", 3);
                 config.getProgressListener().onLog("INFO", "Starting contract validation against: " + baseUrl);
                 AnalysisReport.ContractAnalysisResult contractResult =
                     performContractValidation(openAPI, baseUrl);
@@ -258,14 +256,40 @@ public final class UnifiedAnalyzer {
     private AnalysisReport.StaticAnalysisResult performStaticAnalysis(
             OpenAPI openAPI, List<String> parsingMessages) {
         try {
+            // Count total operations for progress tracking
+            int totalOperations = 0;
+            if (openAPI.getPaths() != null) {
+                for (var path : openAPI.getPaths().values()) {
+                    if (path.getGet() != null) totalOperations++;
+                    if (path.getPost() != null) totalOperations++;
+                    if (path.getPut() != null) totalOperations++;
+                    if (path.getPatch() != null) totalOperations++;
+                    if (path.getDelete() != null) totalOperations++;
+                    if (path.getHead() != null) totalOperations++;
+                    if (path.getOptions() != null) totalOperations++;
+                }
+            }
+
+            config.getProgressListener().onLog("INFO", "Found " + totalOperations + " operations to analyze");
+            config.getProgressListener().onPhaseChange("static-analysis", totalOperations > 0 ? totalOperations : 1);
+
+            config.getProgressListener().onStepComplete(1, "Analyzing OpenAPI specification structure...");
+
             StaticContractValidator validator = new StaticContractValidator(openAPI);
             List<ValidationFinding> findings = validator.validate();
+
+            // Mark all operations as analyzed
+            if (totalOperations > 0) {
+                config.getProgressListener().onStepComplete(totalOperations,
+                    "Static analysis completed: " + findings.size() + " findings");
+            }
 
             logger.info("Static analysis completed: " + findings.size() + " findings");
             return new AnalysisReport.StaticAnalysisResult(parsingMessages, findings, null);
 
         } catch (Exception e) {
             logger.severe("Static analysis failed: " + e.getMessage());
+            config.getProgressListener().onLog("ERROR", "Static analysis failed: " + e.getMessage());
             return new AnalysisReport.StaticAnalysisResult(
                 parsingMessages, List.of(), "Static analysis failed: " + e.getMessage());
         }
@@ -459,26 +483,38 @@ public final class UnifiedAnalyzer {
 
     private AnalysisReport.ContractAnalysisResult performContractValidation(OpenAPI openAPI, String baseUrl) {
         try {
-            // Create contract validation engine
-            boolean fuzzingEnabled = !config.isNoFuzzing();
-            ContractValidationEngine engine = new ContractValidationEngine(openAPI, baseUrl, fuzzingEnabled);
-
             // Extract endpoints from OpenAPI spec
             List<ApiEndpoint> endpoints = extractEndpoints(openAPI);
             logger.info("Extracted " + endpoints.size() + " endpoints for contract validation");
+            config.getProgressListener().onLog("INFO", "Found " + endpoints.size() + " endpoints to validate");
 
             if (endpoints.isEmpty()) {
                 logger.warning("No endpoints found in specification");
+                config.getProgressListener().onLog("WARNING", "No endpoints found in specification");
                 return new AnalysisReport.ContractAnalysisResult(
                     null, "No endpoints found in specification");
             }
 
+            // Set up progress tracking for contract validation
+            config.getProgressListener().onPhaseChange("contract-validation", endpoints.size());
+            config.getProgressListener().onStepComplete(1, "Preparing contract validation...");
+
+            // Create contract validation engine
+            boolean fuzzingEnabled = !config.isNoFuzzing();
+            ContractValidationEngine engine = new ContractValidationEngine(openAPI, baseUrl, fuzzingEnabled);
+
             // Create HTTP client
             HttpClient httpClient = HttpClientHelper.createClient(config);
 
-            // Run contract validation
-            ContractValidationEngine.ContractValidationReport report =
-                engine.validate(endpoints, httpClient);
+            // Validate endpoints with progress tracking
+            config.getProgressListener().onLog("INFO", "Validating " + endpoints.size() + " endpoint(s) against contract...");
+
+            // Manually track progress during validation
+            ContractValidationEngine.ContractValidationReport report = validateEndpointsWithProgress(
+                engine, endpoints, httpClient);
+
+            config.getProgressListener().onStepComplete(endpoints.size(),
+                "Contract validation completed: " + report.getTotalDivergences() + " divergences");
 
             logger.info("Contract validation completed: " +
                 report.getTotalDivergences() + " divergences found");
@@ -487,9 +523,53 @@ public final class UnifiedAnalyzer {
 
         } catch (Exception e) {
             logger.severe("Contract validation failed: " + e.getMessage());
+            config.getProgressListener().onLog("ERROR", "Contract validation failed: " + e.getMessage());
             return new AnalysisReport.ContractAnalysisResult(
                 null, "Contract validation failed: " + e.getMessage());
         }
+    }
+
+    /**
+     * Validates endpoints with progress tracking.
+     */
+    private ContractValidationEngine.ContractValidationReport validateEndpointsWithProgress(
+            ContractValidationEngine engine,
+            List<ApiEndpoint> endpoints,
+            HttpClient httpClient) {
+
+        Instant startTime = Instant.now();
+        List<active.validator.model.ValidationResult> results = new ArrayList<>();
+
+        for (int i = 0; i < endpoints.size(); i++) {
+            ApiEndpoint endpoint = endpoints.get(i);
+            String endpointStr = endpoint.getMethod() + " " + endpoint.getPath();
+
+            config.getProgressListener().onStepComplete(i + 1,
+                "Validating " + (i + 1) + "/" + endpoints.size() + ": " + endpointStr);
+
+            try {
+                active.validator.model.ValidationResult result = engine.validateEndpoint(endpoint, httpClient);
+                results.add(result);
+
+                if (result.hasDivergences()) {
+                    config.getProgressListener().onLog("WARNING",
+                        "  ⚠ Found " + result.getDivergences().size() + " divergence(s) in " + endpointStr);
+                } else {
+                    config.getProgressListener().onLog("DEBUG",
+                        "  ✓ " + endpointStr + " matches contract");
+                }
+            } catch (Exception e) {
+                logger.warning("Failed to validate " + endpointStr + ": " + e.getMessage());
+                config.getProgressListener().onLog("WARNING",
+                    "  ✗ Failed to validate " + endpointStr + ": " + e.getMessage());
+            }
+        }
+
+        Instant endTime = Instant.now();
+        boolean fuzzingEnabled = !config.isNoFuzzing();
+
+        return new ContractValidationEngine.ContractValidationReport(
+            results, startTime, endTime, fuzzingEnabled);
     }
 
     /**

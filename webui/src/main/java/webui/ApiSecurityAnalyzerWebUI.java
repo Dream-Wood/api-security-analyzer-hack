@@ -2,6 +2,7 @@ package webui;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -39,13 +40,22 @@ public class ApiSecurityAnalyzerWebUI {
 
     /**
      * Настройка Jackson ObjectMapper для сериализации JSON.
+     * Поддерживает Java 8 Time API и Optional типы.
      */
     @Bean
     public ObjectMapper objectMapper() {
         ObjectMapper mapper = new ObjectMapper();
+
+        // Java Time support (Instant, LocalDateTime, etc.)
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+        // JDK8 types support (Optional, OptionalInt, OptionalLong, etc.)
+        mapper.registerModule(new Jdk8Module());
+
+        // Pretty print for development
         mapper.enable(SerializationFeature.INDENT_OUTPUT);
+
         return mapper;
     }
 
