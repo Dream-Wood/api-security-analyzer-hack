@@ -1,23 +1,35 @@
 package cli;
 
 import active.ActiveAnalysisEngine;
+import active.async.AsyncAnalysisEngine;
+import active.async.AsyncAnalysisReport;
+import active.async.AsyncScanResult;
+import active.async.AsyncVulnerabilityReport;
 import active.auth.AuthCredentials;
 import active.auth.AuthenticationHelper;
+import active.discovery.EndpointDiscoveryEngine;
+import active.discovery.model.DiscoveryConfig;
+import active.discovery.model.DiscoveryResult;
 import active.http.HttpClient;
 import active.http.HttpClientConfig;
 import active.http.HttpClientFactory;
+import active.model.AnalysisProgressListener;
 import active.model.ApiEndpoint;
 import active.scanner.ScanContext;
+import active.scanner.ScanIntensity;
 import active.validator.ContractValidationEngine;
 import report.AnalysisReport;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.servers.Server;
 import io.swagger.v3.oas.models.PathItem;
+import model.ChannelSpec;
 import model.ParameterSpec;
+import model.ServerSpec;
 import model.SpecificationType;
 import model.ValidationFinding;
 import parser.AsyncApiLoader;
+import parser.AsyncSpecNormalizer;
 import parser.OpenApiLoader;
 import parser.SpecNormalizer;
 import util.SpecTypeDetector;
@@ -221,7 +233,7 @@ public final class UnifiedAnalyzer {
                 logger.info("Performing active analysis against: " + baseUrl);
                 config.getProgressListener().onPhaseChange("active-analysis", 5);
                 config.getProgressListener().onLog("INFO", "Starting active security scans against: " + baseUrl);
-                AnalysisReport.ActiveAnalysisResult activeResult = performActiveAnalysis(openAPI, baseUrl);
+                AnalysisReport.ActiveAnalysisResult activeResult = performActiveAnalysis(openAPI, baseUrl, reportBuilder);
                 reportBuilder.activeResult(activeResult);
                 int vulnCount = (activeResult.getReport() != null ? activeResult.getReport().getTotalVulnerabilityCount() : 0);
                 config.getProgressListener().onLog("INFO", "Active analysis found " + vulnCount + " vulnerabilities");
@@ -330,8 +342,10 @@ public final class UnifiedAnalyzer {
         return null;
     }
 
-    private AnalysisReport.ActiveAnalysisResult performActiveAnalysis(OpenAPI openAPI, String baseUrl) {
+    private AnalysisReport.ActiveAnalysisResult performActiveAnalysis(OpenAPI openAPI, String baseUrl,
+                                                                      AnalysisReport.Builder reportBuilder) {
         ActiveAnalysisEngine engine = null;
+        EndpointDiscoveryEngine discoveryEngine = null;
         try {
             // Create and configure analysis engine
             ActiveAnalysisEngine.AnalysisConfig.Builder analysisConfigBuilder =
@@ -435,14 +449,171 @@ public final class UnifiedAnalyzer {
             // Extract endpoints from OpenAPI spec
             config.getProgressListener().onStepComplete(1, "Parsing API endpoints from specification...");
             List<ApiEndpoint> endpoints = extractEndpoints(openAPI);
-            logger.info("Extracted " + endpoints.size() + " endpoints for active scanning");
-            config.getProgressListener().onLog("INFO", "Found " + endpoints.size() + " endpoints to scan");
+            logger.info("Extracted " + endpoints.size() + " documented endpoints for active scanning");
+            config.getProgressListener().onLog("INFO", "Found " + endpoints.size() + " documented endpoints");
+
+            // Run Endpoint Discovery if enabled
+            if (config.isEnableDiscovery()) {
+                try {
+                    logger.info("Endpoint Discovery is enabled, starting discovery phase...");
+                    config.getProgressListener().onLog("INFO", "Starting Endpoint Discovery to find undocumented endpoints...");
+                    // DO NOT call onPhaseChange here - EndpointDiscoveryEngine will set it with accurate step count
+
+                    // Create HTTP client for discovery
+                    HttpClientConfig.Builder httpConfigBuilder = HttpClientConfig.builder()
+                        .cryptoProtocol(config.getCryptoProtocol())
+                        .connectTimeout(java.time.Duration.ofSeconds(30))
+                        .readTimeout(java.time.Duration.ofSeconds(30))
+                        .followRedirects(true)
+                        .verifySsl(config.isVerifySsl());
+
+                    // Add GOST configuration if provided
+                    if (config.getGostPfxPath() != null) {
+                        httpConfigBuilder.addCustomSetting("pfxPath", config.getGostPfxPath());
+                    }
+                    if (config.getGostPfxPassword() != null) {
+                        httpConfigBuilder.addCustomSetting("pfxPassword", config.getGostPfxPassword());
+                    }
+                    if (config.isGostPfxResource()) {
+                        httpConfigBuilder.addCustomSetting("pfxResource", "true");
+                    }
+
+                    HttpClient discoveryHttpClient = HttpClientFactory.createClient(httpConfigBuilder.build());
+
+                    // Create Discovery configuration
+                    DiscoveryConfig.Builder discoveryConfigBuilder = DiscoveryConfig.builder();
+
+                    // Set strategy
+                    if (config.getDiscoveryStrategy() != null) {
+                        // Convert "top-down" to "TOP_DOWN" for enum parsing
+                        String strategyName = config.getDiscoveryStrategy().toUpperCase().replace("-", "_");
+                        discoveryConfigBuilder.strategy(
+                            DiscoveryConfig.DiscoveryStrategy.valueOf(strategyName)
+                        );
+                    } else {
+                        discoveryConfigBuilder.strategy(DiscoveryConfig.DiscoveryStrategy.HYBRID);
+                    }
+
+                    // Set max depth
+                    if (config.getDiscoveryMaxDepth() != null) {
+                        discoveryConfigBuilder.maxDepth(config.getDiscoveryMaxDepth());
+                    }
+
+                    // Set max requests
+                    if (config.getDiscoveryMaxRequests() != null) {
+                        discoveryConfigBuilder.maxTotalRequests(config.getDiscoveryMaxRequests());
+                    }
+
+                    // Set request delay (use scanIntensity or custom requestDelayMs)
+                    int discoveryDelayMs = 100; // Default
+                    if (config.getRequestDelayMs() != null) {
+                        discoveryDelayMs = config.getRequestDelayMs();
+                    } else if (config.getScanIntensity() != null) {
+                        // Map scan intensity to delay
+                        discoveryDelayMs = switch (config.getScanIntensity().toLowerCase()) {
+                            case "low" -> 500;
+                            case "medium" -> 200;
+                            case "high" -> 100;
+                            case "aggressive" -> 50;
+                            default -> 100;
+                        };
+                    }
+                    discoveryConfigBuilder.requestDelayMs(discoveryDelayMs);
+
+                    // Set fast cancel
+                    discoveryConfigBuilder.fastCancel(config.isDiscoveryFastCancel());
+
+                    // Set wordlist directory
+                    if (config.getWordlistDir() != null) {
+                        discoveryConfigBuilder.wordlistDirectory(config.getWordlistDir());
+                    }
+
+                    // Set verbose mode
+                    discoveryConfigBuilder.verbose(config.isVerbose());
+
+                    DiscoveryConfig discoveryConfig = discoveryConfigBuilder.build();
+
+                    // Create Discovery engine with progress listener
+                    discoveryEngine = new EndpointDiscoveryEngine(
+                        discoveryHttpClient,
+                        discoveryConfig,
+                        config.getProgressListener()
+                    );
+
+                    // Get operations from spec for Discovery
+                    SpecNormalizer normalizer = new SpecNormalizer();
+                    var operations = normalizer.normalize(openAPI);
+
+                    // Run discovery - progress will be reported by EndpointDiscoveryEngine
+                    EndpointDiscoveryEngine.DiscoveryReport discoveryReport =
+                        discoveryEngine.discover(operations, baseUrl);
+
+                    logger.info("Endpoint Discovery completed: found " + discoveryReport.getTotalCount() +
+                        " undocumented endpoint(s) in " + discoveryReport.getDuration().toSeconds() + "s");
+
+                    // Add discovery results to report
+                    reportBuilder.discoveryResult(
+                        new AnalysisReport.DiscoveryAnalysisResult(discoveryReport, null)
+                    );
+
+                    // Convert discovered endpoints to ApiEndpoint and add to scan list
+                    if (discoveryReport.hasFindings()) {
+                        List<ApiEndpoint> discoveredEndpoints = new ArrayList<>();
+                        for (DiscoveryResult result : discoveryReport.getResults()) {
+                            ApiEndpoint discoveredEndpoint = ApiEndpoint.builder()
+                                .path(result.getEndpoint().getPath())
+                                .method(result.getEndpoint().getMethod())
+                                .addMetadata("discovered", true)
+                                .addMetadata("discoveryMethod", result.getDiscoveryMethod().name())
+                                .addMetadata("confidence", result.getMetadata().get("confidence"))
+                                .addMetadata("severity", result.getSeverity().name())
+                                .build();
+                            discoveredEndpoints.add(discoveredEndpoint);
+                        }
+
+                        endpoints.addAll(discoveredEndpoints);
+                        logger.info("Added " + discoveredEndpoints.size() +
+                            " discovered endpoints to scan queue. Total endpoints to scan: " + endpoints.size());
+                        config.getProgressListener().onLog("INFO",
+                            "Total endpoints to scan: " + endpoints.size() +
+                            " (" + discoveredEndpoints.size() + " discovered)");
+                    }
+
+                    // Close discovery HTTP client
+                    discoveryHttpClient.close();
+
+                } catch (Exception e) {
+                    logger.warning("Endpoint Discovery failed: " + e.getMessage());
+                    config.getProgressListener().onLog("WARNING", "Endpoint Discovery failed: " + e.getMessage());
+                    reportBuilder.discoveryResult(
+                        new AnalysisReport.DiscoveryAnalysisResult(null,
+                            "Discovery failed: " + e.getMessage())
+                    );
+                    // Continue with documented endpoints only
+                }
+            }
 
             if (endpoints.isEmpty()) {
                 logger.warning("No endpoints found in specification");
                 config.getProgressListener().onLog("WARNING", "No endpoints found in specification");
                 return new AnalysisReport.ActiveAnalysisResult(
                     null, "No endpoints found in specification");
+            }
+
+            // Check if scanners are disabled (Discovery-only mode)
+            boolean scannersDisabled = config.getEnabledScanners() != null && config.getEnabledScanners().isEmpty();
+
+            if (scannersDisabled) {
+                logger.info("All vulnerability scanners disabled - Discovery-only mode");
+                config.getProgressListener().onLog("INFO", "✓ Discovery-only mode - vulnerability scanning skipped");
+                config.getProgressListener().onPhaseChange("active-analysis", 1);
+                config.getProgressListener().onStepComplete(1, "Skipping vulnerability scans (Discovery-only mode)");
+                // Return empty report (no vulnerabilities scanned)
+                java.time.Instant now = java.time.Instant.now();
+                return new AnalysisReport.ActiveAnalysisResult(
+                    new ActiveAnalysisEngine.AnalysisReport(List.of(), now, now),
+                    null
+                );
             }
 
             // Create scan context
@@ -676,11 +847,28 @@ public final class UnifiedAnalyzer {
         }
         reportBuilder.specTitle(specTitle);
 
-        // Perform static analysis
-        logger.info("Performing static analysis on AsyncAPI specification");
-        AnalysisReport.StaticAnalysisResult staticResult =
-            performAsyncStaticAnalysis(asyncApiNode, loadResult.getMessages());
-        reportBuilder.staticResult(staticResult);
+        // Perform static analysis if needed
+        if (config.mode != AnalysisReport.AnalysisMode.ACTIVE_ONLY) {
+            logger.info("Performing static analysis on AsyncAPI specification");
+            AnalysisReport.StaticAnalysisResult staticResult =
+                performAsyncStaticAnalysis(asyncApiNode, loadResult.getMessages());
+            reportBuilder.staticResult(staticResult);
+        }
+
+        // Perform active analysis if needed
+        if (config.mode != AnalysisReport.AnalysisMode.STATIC_ONLY) {
+            logger.info("Performing active analysis on AsyncAPI specification");
+            try {
+                AsyncAnalysisReport activeResult = performAsyncActiveAnalysis(asyncApiNode);
+                // TODO: Convert AsyncAnalysisReport to format compatible with AnalysisReport
+                // For now, just log the results
+                logger.info(String.format("AsyncAPI active analysis completed: %d vulnerabilities found",
+                        activeResult.getTotalVulnerabilities()));
+                logger.info(activeResult.getSummary());
+            } catch (Exception e) {
+                logger.severe("AsyncAPI active analysis failed: " + e.getMessage());
+            }
+        }
 
         reportBuilder.endTime(Instant.now());
         return reportBuilder.build();
@@ -713,6 +901,68 @@ public final class UnifiedAnalyzer {
             logger.severe("Static analysis failed: " + e.getMessage());
             return new AnalysisReport.StaticAnalysisResult(
                 parsingMessages, List.of(), "Static analysis failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Performs active analysis on AsyncAPI specification.
+     * Uses AsyncAnalysisEngine to test async operations with protocol clients and scanners.
+     *
+     * @param asyncApiNode the AsyncAPI specification node
+     * @return AsyncAnalysisReport with vulnerability findings
+     */
+    private AsyncAnalysisReport performAsyncActiveAnalysis(JsonNode asyncApiNode) {
+        logger.info("Starting AsyncAPI active analysis");
+
+        try {
+            // Parse AsyncAPI specification to extract channels and servers
+            AsyncSpecNormalizer normalizer = new AsyncSpecNormalizer();
+            List<ChannelSpec> channels = normalizer.normalize(asyncApiNode);
+            Map<String, ServerSpec> servers = normalizer.extractServers(asyncApiNode);
+
+            logger.info(String.format("Parsed AsyncAPI: %d channel(s), %d server(s)",
+                    channels.size(), servers.size()));
+
+            // Determine scan intensity
+            ScanIntensity intensity = ScanIntensity.MEDIUM; // default
+            if (config.scanIntensity != null) {
+                try {
+                    intensity = ScanIntensity.valueOf(config.scanIntensity.toUpperCase());
+                } catch (IllegalArgumentException e) {
+                    logger.warning("Invalid scan intensity: " + config.scanIntensity + ", using MEDIUM");
+                }
+            }
+
+            // Build scan context
+            ScanContext scanContext = ScanContext.builder()
+                    .scanIntensity(intensity)
+                    .maxRequestsPerEndpoint(100) // reasonable limit
+                    .build();
+
+            // Create AsyncAnalysisEngine
+            AsyncAnalysisEngine engine = new AsyncAnalysisEngine.Builder()
+                    .withThreadPoolSize(config.maxParallelScans)
+                    .withScanContext(scanContext)
+                    .withPluginsDirectory("plugins")
+                    .withAutoDiscoverPlugins(true)
+                    .build();
+
+            // Execute analysis
+            AsyncAnalysisReport report = engine.analyze(channels, servers);
+
+            // Cleanup
+            engine.shutdown();
+
+            logger.info(String.format("AsyncAPI active analysis completed: %d vulnerabilities found in %dms",
+                    report.getTotalVulnerabilities(), report.getDurationMs()));
+
+            return report;
+
+        } catch (Exception e) {
+            logger.severe("AsyncAPI active analysis failed: " + e.getMessage());
+            e.printStackTrace();
+            // Return empty report on failure
+            return new AsyncAnalysisReport(List.of(), 0);
         }
     }
 
@@ -757,11 +1007,22 @@ public final class UnifiedAnalyzer {
         private final String gostPfxPath;
         private final String gostPfxPassword;
         private final boolean gostPfxResource;
+        private final boolean useLowLevelSocket;
+        private final String targetIP;
+        private final String sniHostname;
         private final List<String> enabledScanners;
         private final String scanIntensity;
         private final Integer requestDelayMs;
         private final List<AuthCredentials> testUsers;
         private final AnalysisProgressListener progressListener;
+
+        // Discovery options
+        private final boolean enableDiscovery;
+        private final String discoveryStrategy;
+        private final Integer discoveryMaxDepth;
+        private final Integer discoveryMaxRequests;
+        private final boolean discoveryFastCancel;
+        private final String wordlistDir;
 
         private AnalyzerConfig(Builder builder) {
             this.mode = builder.mode != null ? builder.mode : AnalysisReport.AnalysisMode.STATIC_ONLY;
@@ -779,11 +1040,22 @@ public final class UnifiedAnalyzer {
             this.gostPfxPath = builder.gostPfxPath;
             this.gostPfxPassword = builder.gostPfxPassword;
             this.gostPfxResource = builder.gostPfxResource;
+            this.useLowLevelSocket = builder.useLowLevelSocket;
+            this.targetIP = builder.targetIP;
+            this.sniHostname = builder.sniHostname;
             this.enabledScanners = builder.enabledScanners;
             this.scanIntensity = builder.scanIntensity;
             this.requestDelayMs = builder.requestDelayMs;
             this.testUsers = builder.testUsers;
             this.progressListener = builder.progressListener != null ? builder.progressListener : AnalysisProgressListener.noOp();
+
+            // Discovery
+            this.enableDiscovery = builder.enableDiscovery;
+            this.discoveryStrategy = builder.discoveryStrategy;
+            this.discoveryMaxDepth = builder.discoveryMaxDepth;
+            this.discoveryMaxRequests = builder.discoveryMaxRequests;
+            this.discoveryFastCancel = builder.discoveryFastCancel;
+            this.wordlistDir = builder.wordlistDir;
         }
 
         public static Builder builder() {
@@ -842,6 +1114,18 @@ public final class UnifiedAnalyzer {
             return gostPfxResource;
         }
 
+        public boolean isUseLowLevelSocket() {
+            return useLowLevelSocket;
+        }
+
+        public String getTargetIP() {
+            return targetIP;
+        }
+
+        public String getSniHostname() {
+            return sniHostname;
+        }
+
         public List<String> getEnabledScanners() {
             return enabledScanners;
         }
@@ -862,6 +1146,30 @@ public final class UnifiedAnalyzer {
             return progressListener;
         }
 
+        public boolean isEnableDiscovery() {
+            return enableDiscovery;
+        }
+
+        public String getDiscoveryStrategy() {
+            return discoveryStrategy;
+        }
+
+        public Integer getDiscoveryMaxDepth() {
+            return discoveryMaxDepth;
+        }
+
+        public Integer getDiscoveryMaxRequests() {
+            return discoveryMaxRequests;
+        }
+
+        public boolean isDiscoveryFastCancel() {
+            return discoveryFastCancel;
+        }
+
+        public String getWordlistDir() {
+            return wordlistDir;
+        }
+
         public static class Builder {
             private AnalysisReport.AnalysisMode mode;
             private String baseUrl;
@@ -876,11 +1184,22 @@ public final class UnifiedAnalyzer {
             private String gostPfxPath;
             private String gostPfxPassword;
             private boolean gostPfxResource;
+            private boolean useLowLevelSocket;
+            private String targetIP;
+            private String sniHostname;
             private List<String> enabledScanners;
             private String scanIntensity;
             private Integer requestDelayMs;
             private List<AuthCredentials> testUsers;
             private AnalysisProgressListener progressListener;
+
+            // Discovery options
+            private boolean enableDiscovery;
+            private String discoveryStrategy;
+            private Integer discoveryMaxDepth;
+            private Integer discoveryMaxRequests;
+            private boolean discoveryFastCancel;
+            private String wordlistDir;
 
             public Builder mode(AnalysisReport.AnalysisMode mode) {
                 this.mode = mode;
@@ -947,6 +1266,21 @@ public final class UnifiedAnalyzer {
                 return this;
             }
 
+            public Builder useLowLevelSocket(boolean useLowLevelSocket) {
+                this.useLowLevelSocket = useLowLevelSocket;
+                return this;
+            }
+
+            public Builder targetIP(String targetIP) {
+                this.targetIP = targetIP;
+                return this;
+            }
+
+            public Builder sniHostname(String sniHostname) {
+                this.sniHostname = sniHostname;
+                return this;
+            }
+
             public Builder enabledScanners(List<String> enabledScanners) {
                 this.enabledScanners = enabledScanners;
                 return this;
@@ -969,6 +1303,36 @@ public final class UnifiedAnalyzer {
 
             public Builder progressListener(AnalysisProgressListener progressListener) {
                 this.progressListener = progressListener;
+                return this;
+            }
+
+            public Builder enableDiscovery(boolean enableDiscovery) {
+                this.enableDiscovery = enableDiscovery;
+                return this;
+            }
+
+            public Builder discoveryStrategy(String discoveryStrategy) {
+                this.discoveryStrategy = discoveryStrategy;
+                return this;
+            }
+
+            public Builder discoveryMaxDepth(Integer discoveryMaxDepth) {
+                this.discoveryMaxDepth = discoveryMaxDepth;
+                return this;
+            }
+
+            public Builder discoveryMaxRequests(Integer discoveryMaxRequests) {
+                this.discoveryMaxRequests = discoveryMaxRequests;
+                return this;
+            }
+
+            public Builder discoveryFastCancel(boolean discoveryFastCancel) {
+                this.discoveryFastCancel = discoveryFastCancel;
+                return this;
+            }
+
+            public Builder wordlistDir(String wordlistDir) {
+                this.wordlistDir = wordlistDir;
                 return this;
             }
 

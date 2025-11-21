@@ -1,6 +1,8 @@
 package cli;
 
 import active.http.HttpClient;
+import com.apisecurity.analyzer.core.i18n.LocaleManager;
+import com.apisecurity.analyzer.core.i18n.MessageService;
 import report.AnalysisReport;
 import report.ReportFormat;
 import report.Reporter;
@@ -39,6 +41,11 @@ import java.util.concurrent.Callable;
  *
  * # Полный анализ с поддержкой ГОСТ криптографии
  * api-security-analyzer -m full -c gost --gost-pfx-path cert.pfx spec.yaml
+ *
+ * # ГОСТ с обходом hostname verification (IP+SNI техника)
+ * api-security-analyzer -m active -c gost --gost-pfx-path cert.pfx \
+ *   --server-ip 45.84.153.123 --sni-hostname localhost \
+ *   -u https://api.gost.bankingapi.ru:8443 spec.yaml
  * </pre>
  *
  * @author API Security Analyzer Team
@@ -108,6 +115,18 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
     private boolean gostPfxResource;
 
     @Option(
+        names = {"--server-ip"},
+        description = "Server IP address for GOST TLS bypass (use with --sni-hostname)"
+    )
+    private String serverIp;
+
+    @Option(
+        names = {"--sni-hostname"},
+        description = "SNI hostname for GOST TLS bypass (hostname from certificate SAN)"
+    )
+    private String sniHostname;
+
+    @Option(
         names = {"-f", "--format"},
         description = "Output format: console, json (default: console)"
     )
@@ -124,6 +143,12 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
         description = "Enable verbose output"
     )
     private boolean verbose;
+
+    @Option(
+        names = {"-l", "--lang", "--language"},
+        description = "Language for output: en, ru (default: system locale)"
+    )
+    private String language;
 
     @Option(
         names = {"--no-fuzzing"},
@@ -161,11 +186,62 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
     )
     private Integer requestDelayMs;
 
+    // === Discovery Options ===
+
+    @Option(
+        names = {"--enable-discovery"},
+        description = "Enable endpoint discovery to find undocumented endpoints"
+    )
+    private boolean enableDiscovery;
+
+    @Option(
+        names = {"--discovery-strategy"},
+        description = "Discovery strategy: none, top-down, bottom-up, hybrid (default: none)"
+    )
+    private String discoveryStrategy;
+
+    @Option(
+        names = {"--discovery-max-depth"},
+        description = "Maximum depth for discovery (default: 5)"
+    )
+    private Integer discoveryMaxDepth;
+
+    @Option(
+        names = {"--discovery-max-requests"},
+        description = "Maximum total requests for discovery (default: 1000)"
+    )
+    private Integer discoveryMaxRequests;
+
+    @Option(
+        names = {"--discovery-fast-cancel"},
+        description = "Stop immediately when dangerous undocumented endpoint found"
+    )
+    private boolean discoveryFastCancel;
+
+    @Option(
+        names = {"--wordlist-dir"},
+        description = "Directory with wordlist files (default: ./wordlists)"
+    )
+    private String wordlistDir;
+
     @Override
     public Integer call() {
         PrintWriter out = new PrintWriter(System.out, true);
 
         try {
+            // Initialize localization
+            if (language != null && !language.isBlank()) {
+                try {
+                    LocaleManager.setCurrentLocale(language);
+                    if (verbose) {
+                        out.println(MessageService.getMessage("cli.language.set", language));
+                    }
+                } catch (IllegalArgumentException e) {
+                    out.println(MessageService.getMessage("cli.language.unsupported", language));
+                    return 1;
+                }
+            }
+
             // Validate input
             if (specLocation == null || specLocation.trim().isEmpty()) {
                 out.println("ERROR: Specification location is required.");
@@ -218,6 +294,40 @@ public class ApiSecurityAnalyzerCli implements Callable<Integer> {
                 .noFuzzing(noFuzzing)
                 .autoAuth(!noAutoAuth)
                 .createTestUsers(!noTestUsers);
+
+            // Configure IP+SNI for GOST TLS hostname bypass
+            if (serverIp != null && sniHostname != null) {
+                configBuilder
+                    .useLowLevelSocket(true)
+                    .targetIP(serverIp)
+                    .sniHostname(sniHostname);
+                if (verbose) {
+                    out.println("  GOST TLS bypass enabled:");
+                    out.println("    Server IP: " + serverIp);
+                    out.println("    SNI Hostname: " + sniHostname);
+                }
+            }
+
+            // Configure endpoint discovery
+            if (enableDiscovery || discoveryStrategy != null) {
+                String strategy = discoveryStrategy != null ? discoveryStrategy : "hybrid";
+                configBuilder
+                    .enableDiscovery(true)
+                    .discoveryStrategy(strategy)
+                    .discoveryMaxDepth(discoveryMaxDepth != null ? discoveryMaxDepth : 5)
+                    .discoveryMaxRequests(discoveryMaxRequests != null ? discoveryMaxRequests : 1000)
+                    .discoveryFastCancel(discoveryFastCancel)
+                    .wordlistDir(wordlistDir != null ? wordlistDir : "./wordlists");
+
+                if (verbose) {
+                    out.println("  Discovery enabled:");
+                    out.println("    Strategy: " + strategy);
+                    out.println("    Max Depth: " + (discoveryMaxDepth != null ? discoveryMaxDepth : 5));
+                    out.println("    Max Requests: " + (discoveryMaxRequests != null ? discoveryMaxRequests : 1000));
+                    out.println("    Fast Cancel: " + discoveryFastCancel);
+                    out.println("    Wordlist Dir: " + (wordlistDir != null ? wordlistDir : "./wordlists"));
+                }
+            }
 
             // Set max parallel scans if provided
             if (maxParallelScans != null && maxParallelScans > 0) {

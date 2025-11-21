@@ -1,0 +1,19 @@
+# API versions and common top-level segments
+# Priority: high (used at positions 0-1)
+v1
+v2
+v3
+v4
+v5
+api
+rest
+graphql
+internal
+public
+private
+beta
+alpha
+dev
+staging
+prod
+production

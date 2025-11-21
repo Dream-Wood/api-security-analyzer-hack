@@ -1,9 +1,17 @@
 // API service for communicating with the backend
 
 import axios from 'axios';
-import type { ScannerInfo, AnalysisRequest, AnalysisResponse, LogEntry, AnalysisSession } from '../types';
+import i18n from '../i18n/config';
+import type { ScannerInfo, AnalysisRequest, AnalysisResponse, LogEntry, AnalysisSession, AsyncApiInfo, AsyncAnalysisRequest } from '../types';
 
 const API_BASE_URL = '/api';
+
+// Add interceptor to include Accept-Language header based on current i18n language
+axios.interceptors.request.use((config) => {
+  const currentLang = i18n.language || 'en';
+  config.headers['Accept-Language'] = currentLang;
+  return config;
+});
 
 export const api = {
   // Scanner endpoints
@@ -121,6 +129,63 @@ export const api = {
         type: 'unknown',
         error: 'Failed to detect specification type'
       };
+    }
+  },
+
+  // Get AsyncAPI spec info (servers, protocols, scanners)
+  async getAsyncApiInfo(path: string): Promise<AsyncApiInfo> {
+    const response = await axios.get(`${API_BASE_URL}/analysis/asyncapi/info`, {
+      params: { path }
+    });
+    return response.data;
+  },
+
+  // Start AsyncAPI analysis
+  async startAsyncAnalysis(request: AsyncAnalysisRequest): Promise<AnalysisResponse> {
+    const response = await axios.post(`${API_BASE_URL}/analysis/asyncapi/start`, request);
+    return response.data;
+  },
+
+  // Ping a server URL to check availability
+  async pingServer(url: string): Promise<{
+    url: string;
+    available: boolean;
+    latencyMs?: number;
+    statusCode?: number;
+    error?: string;
+  }> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/analysis/ping`, {
+        params: { url }
+      });
+      return response.data;
+    } catch (error: any) {
+      return {
+        url,
+        available: false,
+        error: error.response?.data?.error || 'Failed to ping server'
+      };
+    }
+  },
+
+  // Ping multiple server URLs at once
+  async pingServers(urls: string[]): Promise<Record<string, {
+    url: string;
+    available: boolean;
+    latencyMs?: number;
+    statusCode?: number;
+    error?: string;
+  }>> {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/analysis/ping-batch`, urls);
+      return response.data;
+    } catch (error) {
+      // Return all as unavailable on error
+      const result: Record<string, any> = {};
+      urls.forEach(url => {
+        result[url] = { url, available: false, error: 'Failed to ping servers' };
+      });
+      return result;
     }
   }
 };

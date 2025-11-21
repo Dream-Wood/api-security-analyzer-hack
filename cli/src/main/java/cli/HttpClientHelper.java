@@ -39,6 +39,17 @@ public final class HttpClientHelper {
             builder.addCustomSetting("pfxResource", "true");
         }
 
+        // Добавление конфигурации для обхода hostname verification (IP+SNI техника)
+        if (config.isUseLowLevelSocket()) {
+            builder.addCustomSetting("useLowLevelSocket", "true");
+        }
+        if (config.getTargetIP() != null) {
+            builder.addCustomSetting("targetIP", config.getTargetIP());
+        }
+        if (config.getSniHostname() != null) {
+            builder.addCustomSetting("sniHostname", config.getSniHostname());
+        }
+
         return HttpClientFactory.createClient(builder.build());
     }
 

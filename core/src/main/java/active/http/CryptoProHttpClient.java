@@ -2,6 +2,7 @@ package active.http;
 
 import active.http.ssl.CryptoProProvider;
 import active.http.ssl.GostTLSContext;
+import active.http.ssl.LowLevelGostSocketClient;
 import active.model.TestRequest;
 import active.model.TestResponse;
 
@@ -37,6 +38,10 @@ import java.util.logging.Logger;
  *     .addCustomSetting("pfxPassword", "password")
  *     .addCustomSetting("pfxResource", "true") // если PFX в ресурсах
  *     .addCustomSetting("enableRevocationCheck", "true") // по умолчанию: true (требует доступ к CDP)
+ *     // Для обхода hostname verification через IP+SNI:
+ *     .addCustomSetting("useLowLevelSocket", "true")
+ *     .addCustomSetting("targetIP", "45.84.153.123")
+ *     .addCustomSetting("sniHostname", "localhost")
  *     .build();
  * </pre>
  *
@@ -88,6 +93,16 @@ public final class CryptoProHttpClient implements HttpClient {
     @Override
     public TestResponse execute(TestRequest request) {
         long startTime = System.currentTimeMillis();
+
+        // Проверить, нужно ли использовать низкоуровневые сокеты
+        boolean useLowLevelSocket = config.getCustomSetting("useLowLevelSocket")
+            .map(Object::toString)
+            .map(Boolean::parseBoolean)
+            .orElse(false);
+
+        if (useLowLevelSocket && request.getFullUrl().startsWith("https://")) {
+            return executeLowLevelSocket(request, startTime);
+        }
 
         try {
             URL url = new URL(request.getFullUrl());
@@ -267,6 +282,97 @@ public final class CryptoProHttpClient implements HttpClient {
             }
 
             return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    /**
+     * Выполнить запрос используя низкоуровневые сокеты для обхода hostname verification.
+     * <p>
+     * Этот метод используется когда:
+     * <ul>
+     *   <li>Сервер доступен по IP адресу</li>
+     *   <li>Сертификат содержит другой hostname в SAN</li>
+     *   <li>CryptoPro SSL выполняет строгую проверку hostname</li>
+     * </ul>
+     *
+     * @param request HTTP запрос
+     * @param startTime время начала запроса
+     * @return HTTP ответ
+     */
+    private TestResponse executeLowLevelSocket(TestRequest request, long startTime) {
+        try {
+            // Получить настройки IP+SNI
+            String targetIP = config.getCustomSetting("targetIP")
+                .map(Object::toString)
+                .orElseThrow(() -> new IllegalArgumentException(
+                    "targetIP must be specified when useLowLevelSocket=true"
+                ));
+
+            String sniHostname = config.getCustomSetting("sniHostname")
+                .map(Object::toString)
+                .orElseThrow(() -> new IllegalArgumentException(
+                    "sniHostname must be specified when useLowLevelSocket=true"
+                ));
+
+            // Извлечь порт и путь из URL
+            URL url = new URL(request.getFullUrl());
+            int port = url.getPort() != -1 ? url.getPort() : url.getDefaultPort();
+            String path = url.getPath();
+            if (url.getQuery() != null) {
+                path += "?" + url.getQuery();
+            }
+
+            logger.info(String.format(
+                "Using low-level socket: IP=%s, Port=%d, SNI=%s, Path=%s",
+                targetIP, port, sniHostname, path
+            ));
+
+            // Создать клиент низкоуровневых сокетов
+            LowLevelGostSocketClient socketClient = new LowLevelGostSocketClient(
+                tlsContext.getSslContext(),
+                request.getTimeoutMs() > 0 ? request.getTimeoutMs() : (int) config.getConnectTimeout().toMillis()
+            );
+
+            // Объединить заголовки из конфигурации и запроса
+            Map<String, String> allHeaders = new LinkedHashMap<>();
+            config.getDefaultHeaders().forEach(allHeaders::put);
+            request.getHeaders().forEach(allHeaders::put);
+
+            // Отправить запрос
+            LowLevelGostSocketClient.Response response = socketClient.sendRequest(
+                targetIP,
+                port,
+                sniHostname,
+                request.getMethod(),
+                path,
+                allHeaders,
+                request.getBody()
+            );
+
+            long responseTime = System.currentTimeMillis() - startTime;
+
+            // Преобразовать ответ в TestResponse
+            Map<String, List<String>> headers = new LinkedHashMap<>();
+            response.getHeaders().forEach((key, value) ->
+                headers.put(key, Collections.singletonList(value))
+            );
+
+            return TestResponse.builder()
+                .statusCode(response.getStatusCode())
+                .headers(headers)
+                .body(response.getBody())
+                .responseTimeMs(responseTime)
+                .build();
+
+        } catch (Exception e) {
+            long responseTime = System.currentTimeMillis() - startTime;
+            logger.log(Level.WARNING, "Low-level socket request failed: " + request, e);
+
+            return TestResponse.builder()
+                .statusCode(0)
+                .responseTimeMs(responseTime)
+                .error(e)
+                .build();
         }
     }
 }

@@ -48,6 +48,7 @@ if not exist "%CRYPTOPRO_JARS_DIR%" (
     echo   - JCPRevTools.jar
     echo   - asn1rt.jar
     echo   - ASN1P.jar
+    echo   - sspiSSL.jar
     echo.
     pause
     exit /b 1
@@ -119,6 +120,15 @@ if exist "%CRYPTOPRO_JARS_DIR%\ASN1P.jar" (
     if errorlevel 1 goto :error
 ) else (
     echo WARNING: ASN1P.jar not found - REQUIRED
+)
+
+REM Install sspiSSL
+if exist "%CRYPTOPRO_JARS_DIR%\ASN1P.jar" (
+    echo [7/7] Installing ASN1P.jar...
+    call mvn install:install-file -Dfile="%CRYPTOPRO_JARS_DIR%\sspiSSL.jar" -DgroupId=ru.cryptopro -DartifactId=sspiSSL -Dversion=%VERSION% -Dpackaging=jar
+    if errorlevel 1 goto :error
+) else (
+    echo WARNING: sspiSSL.jar not found - REQUIRED
 )
 
 echo.

@@ -119,11 +119,29 @@ public final class GostTLSContext {
         // Prepare KeyManagers
         KeyManager[] keyManagers = null;
         if (pfxKeyStore != null) {
-            keyManagers = createGostKeyManagers(pfxKeyStore, jcpKeyStore, cacertsStore, enableRevocationCheck);
+            try {
+                keyManagers = createGostKeyManagers(pfxKeyStore, jcpKeyStore, cacertsStore, enableRevocationCheck);
+                logger.info("Client certificate authentication enabled (mutual TLS)");
+            } catch (Exception e) {
+                logger.warning(
+                    "Failed to configure client certificate authentication: " + e.getMessage() + ". " +
+                    "Continuing with server-only authentication (one-way TLS). " +
+                    "If mutual TLS is required, ensure your PFX certificate has Extended Key Usage: TLS Client Authentication"
+                );
+                // Continue without client authentication (keyManagers = null)
+            }
+        } else {
+            logger.info("No client certificate configured - using server-only authentication");
         }
 
         // Prepare TrustManagers
-        TrustManager[] trustManagers = createGostTrustManagers(jcpKeyStore);
+        TrustManager[] trustManagers;
+        if (disableVerification) {
+            logger.warning("SSL verification DISABLED - using PermissiveTrustManager (testing mode)");
+            trustManagers = new TrustManager[]{new PermissiveTrustManager()};
+        } else {
+            trustManagers = createGostTrustManagers(jcpKeyStore);
+        }
 
         // Create SSL context
         SSLContext context = SSLContext.getInstance(GOST_PROTOCOL);
@@ -185,7 +203,8 @@ public final class GostTLSContext {
 
             // Step 5: Initialize JavaTLSCertPathManagerParameters with PFX KeyStore
             KeyStore pfxStore = pfxKeyStore.getKeyStore();
-            Object managerParameters = createJavaTLSCertPathManagerParameters(pfxStore);
+            char[] pfxPassword = pfxKeyStore.getPassword();
+            Object managerParameters = createJavaTLSCertPathManagerParameters(pfxStore, pfxPassword);
 
             // Step 6: Set PKIX parameters and initialize factory
             setParameters(managerParameters, pkixParameters);
@@ -234,14 +253,15 @@ public final class GostTLSContext {
      * Создать экземпляр JavaTLSCertPathManagerParameters используя рефлексию.
      *
      * @param keyStore KeyStore для использования
+     * @param password пароль для KeyStore
      * @return экземпляр JavaTLSCertPathManagerParameters
      * @throws RuntimeException если класс не может быть создан
      */
-    private Object createJavaTLSCertPathManagerParameters(KeyStore keyStore) {
+    private Object createJavaTLSCertPathManagerParameters(KeyStore keyStore, char[] password) {
         try {
             Class<?> paramsClass = Class.forName(JAVA_TLS_CERT_PATH_MANAGER_PARAMS_CLASS);
             Constructor<?> constructor = paramsClass.getConstructor(KeyStore.class, char[].class);
-            return constructor.newInstance(keyStore, new char[0]);
+            return constructor.newInstance(keyStore, password);
         } catch (ClassNotFoundException e) {
             throw new RuntimeException(
                 "CryptoPro SSL library not found. " +
@@ -286,7 +306,11 @@ public final class GostTLSContext {
         private boolean enableRevocationCheck = true; // Enabled by default for security
 
         /**
-         * Установить путь к PFX сертификату и пароль.
+         * Установить путь к PFX сертификату и пароль (ОПЦИОНАЛЬНО).
+         *
+         * <p>Если не указан, будет использоваться только server authentication (one-way TLS).
+         * Если сертификат не имеет Extended Key Usage: TLS Client Authentication,
+         * будет выведено предупреждение и продолжена работа без клиентской аутентификации.
          *
          * @param pfxPath путь к PFX файлу
          * @param password пароль PFX
@@ -298,7 +322,11 @@ public final class GostTLSContext {
         }
 
         /**
-         * Установить PFX сертификат из ресурса classpath.
+         * Установить PFX сертификат из ресурса classpath (ОПЦИОНАЛЬНО).
+         *
+         * <p>Если не указан, будет использоваться только server authentication (one-way TLS).
+         * Если сертификат не имеет Extended Key Usage: TLS Client Authentication,
+         * будет выведено предупреждение и продолжена работа без клиентской аутентификации.
          *
          * @param resourcePath путь к PFX ресурсу (например, "certs/cert.pfx")
          * @param password пароль PFX

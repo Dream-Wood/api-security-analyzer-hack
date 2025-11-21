@@ -1,5 +1,6 @@
 package webui.controller;
 
+import com.apisecurity.analyzer.core.i18n.LocaleManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ByteArrayResource;
@@ -14,20 +15,26 @@ import report.ReportFormat;
 import report.Reporter;
 import report.ReporterFactory;
 import util.SpecTypeDetector;
-import webui.model.AnalysisRequest;
-import webui.model.AnalysisResponse;
+import webui.model.*;
 import webui.service.AnalysisService;
+import webui.util.ReportLocalizer;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -64,14 +71,25 @@ public class AnalysisController {
      * GET /api/analysis/{sessionId}
      */
     @GetMapping("/{sessionId}")
-    public ResponseEntity<Map<String, Object>> getSession(@PathVariable("sessionId") String sessionId) {
+    public ResponseEntity<Map<String, Object>> getSession(
+            @PathVariable("sessionId") String sessionId,
+            @RequestHeader(value = "Accept-Language", required = false, defaultValue = "en") String acceptLanguage) {
+
+        // Устанавливаем locale из Accept-Language header
+        setLocaleFromHeader(acceptLanguage);
+
         return analysisService.getSession(sessionId)
                 .<ResponseEntity<Map<String, Object>>>map(session -> {
                     Map<String, Object> response = new HashMap<>();
                     response.put("sessionId", session.getSessionId());
                     response.put("status", session.getStatus());
                     response.put("logs", session.getLogs());
-                    response.put("report", session.getReport() != null ? session.getReport() : Map.of());
+
+                    // Локализуем report перед отправкой
+                    Object rawReport = session.getReport() != null ? session.getReport() : Map.of();
+                    Map<String, Object> localizedReport = ReportLocalizer.localizeReport(rawReport);
+                    response.put("report", localizedReport);
+
                     response.put("currentStep", session.getCurrentStep());
                     response.put("totalSteps", session.getTotalSteps());
                     response.put("progressPercentage", session.getProgressPercentage());
@@ -115,7 +133,13 @@ public class AnalysisController {
      * GET /api/analysis/{sessionId}/report
      */
     @GetMapping("/{sessionId}/report")
-    public ResponseEntity<?> getReport(@PathVariable("sessionId") String sessionId) {
+    public ResponseEntity<?> getReport(
+            @PathVariable("sessionId") String sessionId,
+            @RequestHeader(value = "Accept-Language", required = false, defaultValue = "en") String acceptLanguage) {
+
+        // Устанавливаем locale из Accept-Language header
+        setLocaleFromHeader(acceptLanguage);
+
         return analysisService.getSession(sessionId)
                 .map(session -> {
                     if (session.getReport() == null) {
@@ -124,7 +148,9 @@ public class AnalysisController {
                                 "message", "Report not available yet"
                         ));
                     } else {
-                        return ResponseEntity.ok(session.getReport());
+                        // Локализуем report перед отправкой
+                        Map<String, Object> localizedReport = ReportLocalizer.localizeReport(session.getReport());
+                        return ResponseEntity.ok(localizedReport);
                     }
                 })
                 .orElse(ResponseEntity.notFound().build());
@@ -299,6 +325,227 @@ public class AnalysisController {
             response.put("type", "unknown");
             response.put("error", e.getMessage());
             return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    /**
+     * Получение информации об AsyncAPI спецификации.
+     * GET /api/analysis/asyncapi/info?path={path}
+     * Всегда возвращает 200 OK с результатом - ошибки валидации содержатся в поле validationMessages.
+     */
+    @GetMapping("/asyncapi/info")
+    public ResponseEntity<AsyncApiInfo> getAsyncApiInfo(@RequestParam("path") String path) {
+        AsyncApiInfo info = analysisService.getAsyncApiInfo(path);
+        return ResponseEntity.ok(info);
+    }
+
+    /**
+     * Запуск анализа AsyncAPI спецификации.
+     * POST /api/analysis/asyncapi/start
+     */
+    @PostMapping("/asyncapi/start")
+    public ResponseEntity<AnalysisResponse> startAsyncAnalysis(@RequestBody AsyncAnalysisRequest request) {
+        try {
+            String sessionId = analysisService.startAsyncAnalysis(request);
+            return ResponseEntity.ok(AnalysisResponse.success(sessionId, "AsyncAPI analysis started"));
+        } catch (Exception e) {
+            logger.error("Error starting AsyncAPI analysis", e);
+            return ResponseEntity.badRequest()
+                    .body(AnalysisResponse.error("Failed to start AsyncAPI analysis: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Пинг URL для проверки доступности сервера.
+     * GET /api/analysis/ping?url={url}
+     */
+    @GetMapping("/ping")
+    public ResponseEntity<Map<String, Object>> pingServer(@RequestParam("url") String url) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("url", url);
+
+        try {
+            // Handle WebSocket URLs - try TCP connection instead of HTTP HEAD
+            if (url.startsWith("ws://") || url.startsWith("wss://")) {
+                return pingWebSocket(url, response);
+            }
+
+            // Validate URL format
+            URI uri = URI.create(url);
+            if (uri.getScheme() == null || (!uri.getScheme().equals("http") && !uri.getScheme().equals("https"))) {
+                response.put("available", false);
+                response.put("error", "Invalid URL scheme. Must be http, https, ws, or wss.");
+                return ResponseEntity.ok(response);
+            }
+
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .build();
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(uri)
+                    .timeout(Duration.ofSeconds(10))
+                    .method("HEAD", HttpRequest.BodyPublishers.noBody())
+                    .header("User-Agent", "API-Security-Analyzer/1.0")
+                    .build();
+
+            long startTime = System.currentTimeMillis();
+            HttpResponse<Void> httpResponse = client.send(request, HttpResponse.BodyHandlers.discarding());
+            long latencyMs = System.currentTimeMillis() - startTime;
+
+            int statusCode = httpResponse.statusCode();
+            // Consider any response (even 4xx/5xx) as "server is reachable"
+            boolean available = statusCode > 0;
+
+            response.put("available", available);
+            response.put("latencyMs", latencyMs);
+            response.put("statusCode", statusCode);
+
+            return ResponseEntity.ok(response);
+
+        } catch (IllegalArgumentException e) {
+            response.put("available", false);
+            response.put("error", "Invalid URL format: " + e.getMessage());
+            return ResponseEntity.ok(response);
+        } catch (java.net.ConnectException e) {
+            response.put("available", false);
+            response.put("error", "Connection refused");
+            return ResponseEntity.ok(response);
+        } catch (java.net.http.HttpTimeoutException e) {
+            response.put("available", false);
+            response.put("error", "Connection timeout");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            response.put("available", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.ok(response);
+        }
+    }
+
+    /**
+     * Ping WebSocket server using TCP socket connection.
+     */
+    private ResponseEntity<Map<String, Object>> pingWebSocket(String url, Map<String, Object> response) {
+        try {
+            // Parse ws:// or wss:// URL
+            String cleanUrl = url.replaceFirst("wss?://", "");
+            String host;
+            int port;
+
+            if (cleanUrl.contains(":")) {
+                String[] parts = cleanUrl.split(":");
+                host = parts[0];
+                // Handle path in URL (e.g., host:port/path)
+                String portPart = parts[1].split("/")[0];
+                port = Integer.parseInt(portPart);
+            } else {
+                // Handle path in URL
+                host = cleanUrl.split("/")[0];
+                port = url.startsWith("wss://") ? 443 : 80;
+            }
+
+            long startTime = System.currentTimeMillis();
+
+            // Try TCP connection to check if port is open
+            try (java.net.Socket socket = new java.net.Socket()) {
+                socket.connect(new java.net.InetSocketAddress(host, port), 10000);
+                long latencyMs = System.currentTimeMillis() - startTime;
+
+                response.put("available", true);
+                response.put("latencyMs", latencyMs);
+                response.put("statusCode", 0); // No HTTP status for WebSocket
+                response.put("protocol", "websocket");
+                return ResponseEntity.ok(response);
+            }
+
+        } catch (java.net.ConnectException e) {
+            response.put("available", false);
+            response.put("error", "Connection refused - server may not be running");
+            return ResponseEntity.ok(response);
+        } catch (java.net.SocketTimeoutException e) {
+            response.put("available", false);
+            response.put("error", "Connection timeout");
+            return ResponseEntity.ok(response);
+        } catch (java.net.UnknownHostException e) {
+            response.put("available", false);
+            response.put("error", "Unknown host: " + e.getMessage());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            response.put("available", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.ok(response);
+        }
+    }
+
+    /**
+     * Пинг нескольких URL одновременно.
+     * POST /api/analysis/ping-batch
+     */
+    @PostMapping("/ping-batch")
+    public ResponseEntity<Map<String, Object>> pingServers(@RequestBody List<String> urls) {
+        Map<String, Object> results = new HashMap<>();
+
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
+
+        for (String url : urls) {
+            Map<String, Object> pingResult = new HashMap<>();
+            pingResult.put("url", url);
+
+            try {
+                URI uri = URI.create(url);
+                if (uri.getScheme() == null || (!uri.getScheme().equals("http") && !uri.getScheme().equals("https"))) {
+                    pingResult.put("available", false);
+                    pingResult.put("error", "Invalid URL scheme");
+                    results.put(url, pingResult);
+                    continue;
+                }
+
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(uri)
+                        .timeout(Duration.ofSeconds(10))
+                        .method("HEAD", HttpRequest.BodyPublishers.noBody())
+                        .header("User-Agent", "API-Security-Analyzer/1.0")
+                        .build();
+
+                long startTime = System.currentTimeMillis();
+                HttpResponse<Void> httpResponse = client.send(request, HttpResponse.BodyHandlers.discarding());
+                long latencyMs = System.currentTimeMillis() - startTime;
+
+                pingResult.put("available", true);
+                pingResult.put("latencyMs", latencyMs);
+                pingResult.put("statusCode", httpResponse.statusCode());
+
+            } catch (Exception e) {
+                pingResult.put("available", false);
+                pingResult.put("error", e.getMessage() != null ? e.getMessage() : "Connection failed");
+            }
+
+            results.put(url, pingResult);
+        }
+
+        return ResponseEntity.ok(results);
+    }
+
+    /**
+     * Вспомогательный метод для установки locale из Accept-Language header.
+     */
+    private void setLocaleFromHeader(String acceptLanguage) {
+        if (acceptLanguage == null || acceptLanguage.isBlank()) {
+            return;
+        }
+
+        // Извлекаем код языка (до первого дефиса, запятой или точки с запятой)
+        String languageCode = acceptLanguage.split("[,;-]")[0].trim().toLowerCase();
+
+        try {
+            LocaleManager.setCurrentLocale(languageCode);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Invalid language code in Accept-Language header: {}", acceptLanguage);
+            LocaleManager.setCurrentLocale("en");
         }
     }
 }

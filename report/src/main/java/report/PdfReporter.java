@@ -1,6 +1,8 @@
 package report;
 
 import active.ActiveAnalysisEngine;
+import active.discovery.EndpointDiscoveryEngine;
+import active.discovery.model.DiscoveryResult;
 import active.model.VulnerabilityReport;
 import active.validator.ContractValidationEngine;
 import active.validator.model.Divergence;
@@ -11,6 +13,8 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.font.PDFont;
+import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.pdmodel.interactive.action.PDActionGoTo;
@@ -20,6 +24,7 @@ import org.apache.pdfbox.pdmodel.interactive.documentnavigation.destination.PDPa
 
 import java.awt.Color;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.time.Duration;
 import java.time.ZoneId;
@@ -109,8 +114,14 @@ public final class PdfReporter implements Reporter {
     private int kbStartPage = -1;
 
     // Font state tracking
-    private PDType1Font currentFont;
+    private PDFont currentFont;
     private float currentFontSize;
+
+    // Unicode fonts for Cyrillic support
+    private PDFont unicodeFont;
+    private PDFont unicodeBoldFont;
+    private PDFont unicodeMonoFont;
+    private boolean unicodeFontsLoaded = false;
 
     // Deferred hyperlinks - created after KB is generated
     private static class DeferredLink {
@@ -208,8 +219,15 @@ public final class PdfReporter implements Reporter {
         knowledgeBase = new LinkedHashMap<>();
         deferredLinks = new ArrayList<>();
         currentContent = null;
+        unicodeFontsLoaded = false;
+        unicodeFont = null;
+        unicodeBoldFont = null;
+        unicodeMonoFont = null;
 
         try {
+            // Load Unicode fonts for Cyrillic support
+            loadUnicodeFonts();
+
             // 1. Title page
             generateTitlePage(report);
             closeCurrentContent();
@@ -236,6 +254,11 @@ public final class PdfReporter implements Reporter {
 
             if (report.hasContractResults()) {
                 generateContractSection(report.getContractResult());
+                closeCurrentContent();
+            }
+
+            if (report.hasDiscoveryResults()) {
+                generateDiscoverySection(report.getDiscoveryResult());
                 closeCurrentContent();
             }
 
@@ -270,7 +293,7 @@ public final class PdfReporter implements Reporter {
 
     private PDPage addNewPage() throws IOException {
         // Save current font state
-        PDType1Font savedFont = currentFont;
+        PDFont savedFont = currentFont;
         float savedFontSize = currentFontSize;
 
         closeCurrentContent();
@@ -293,20 +316,86 @@ public final class PdfReporter implements Reporter {
         }
     }
 
-    private void setFont(PDType1Font font, float size) throws IOException {
+    private void setFont(PDFont font, float size) throws IOException {
         currentFont = font;
         currentFontSize = size;
         currentContent.setFont(font, size);
     }
 
+    /**
+     * Load Unicode fonts that support Cyrillic characters.
+     * Falls back to standard fonts if Unicode fonts are not available.
+     */
+    private void loadUnicodeFonts() throws IOException {
+        if (unicodeFontsLoaded) {
+            return;
+        }
+
+        try {
+            // Try to load DejaVu Sans from resources
+            try (InputStream fontStream = getClass().getResourceAsStream("/fonts/DejaVuSans.ttf")) {
+                if (fontStream != null) {
+                    unicodeFont = PDType0Font.load(document, fontStream, true);
+                }
+            }
+
+            try (InputStream boldStream = getClass().getResourceAsStream("/fonts/DejaVuSans-Bold.ttf")) {
+                if (boldStream != null) {
+                    unicodeBoldFont = PDType0Font.load(document, boldStream, true);
+                }
+            }
+
+            // For mono font, we'll use the regular font as fallback
+            unicodeMonoFont = unicodeFont;
+
+            unicodeFontsLoaded = true;
+        } catch (Exception e) {
+            // If loading fails, we'll use fallback fonts
+            unicodeFontsLoaded = true;
+        }
+    }
+
+    /**
+     * Get the appropriate font for regular text.
+     * Uses Unicode font if available, otherwise falls back to Helvetica.
+     */
+    private PDFont getRegularFont() {
+        if (unicodeFont != null) {
+            return unicodeFont;
+        }
+        return new PDType1Font(Standard14Fonts.FontName.HELVETICA);
+    }
+
+    /**
+     * Get the appropriate font for bold text.
+     * Uses Unicode bold font if available, otherwise falls back to Helvetica-Bold.
+     */
+    private PDFont getBoldFont() {
+        if (unicodeBoldFont != null) {
+            return unicodeBoldFont;
+        }
+        return new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
+    }
+
+    /**
+     * Get the appropriate font for monospace text.
+     * Uses Unicode font if available, otherwise falls back to Courier.
+     */
+    private PDFont getMonoFont() {
+        if (unicodeMonoFont != null) {
+            return unicodeMonoFont;
+        }
+        return new PDType1Font(Standard14Fonts.FontName.COURIER);
+    }
+
     private void generateTitlePage(AnalysisReport report) throws IOException {
         addNewPage();
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 28);
+        setFont(getBoldFont(), 28);
         drawText("API Security Analysis Report", MARGIN, yPosition);
         yPosition -= 60;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 14);
+        setFont(getRegularFont(), 14);
         // Use spec title if available, otherwise extract name from location
         String specName = (report.getSpecTitle() != null && !report.getSpecTitle().isEmpty())
             ? report.getSpecTitle()
@@ -321,11 +410,11 @@ public final class PdfReporter implements Reporter {
         drawText("Analysis Type: " + report.getMode(), MARGIN, yPosition);
         yPosition -= 40;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 16);
+        setFont(getBoldFont(), 16);
         drawText("Included Analysis Types:", MARGIN, yPosition);
         yPosition -= 25;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+        setFont(getRegularFont(), 12);
         if (report.hasStaticResults()) {
             drawText("  * Static Analysis", MARGIN + 10, yPosition);
             yPosition -= 20;
@@ -341,11 +430,11 @@ public final class PdfReporter implements Reporter {
 
         yPosition -= 30;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 16);
+        setFont(getBoldFont(), 16);
         drawText("Summary Statistics:", MARGIN, yPosition);
         yPosition -= 25;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+        setFont(getRegularFont(), 12);
         drawText("Total Issues Found: " + report.getTotalIssueCount(), MARGIN + 10, yPosition);
         yPosition -= 20;
 
@@ -361,11 +450,11 @@ public final class PdfReporter implements Reporter {
         yPosition = PAGE_HEIGHT - 100;
         currentPage = tocPage;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 20);
+        setFont(getBoldFont(), 20);
         drawText("Table of Contents", MARGIN, yPosition);
         yPosition -= 40;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+        setFont(getRegularFont(), 12);
         int pageNum = 1;
         for (TocEntry entry : tocEntries) {
             checkPageSpace(25);
@@ -433,12 +522,12 @@ public final class PdfReporter implements Reporter {
         PDPage sectionPage = addNewPage();
         tocEntries.add(new TocEntry("Static Analysis", sectionPage, 0));
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 22);
+        setFont(getBoldFont(), 22);
         drawText("Static Analysis", MARGIN, yPosition);
         yPosition -= 40;
 
         if (result.hasError()) {
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+            setFont(getRegularFont(), 12);
             currentContent.setNonStrokingColor(Color.RED);
             drawText("Error: " + result.getErrorMessage(), MARGIN, yPosition);
             currentContent.setNonStrokingColor(Color.BLACK);
@@ -448,11 +537,11 @@ public final class PdfReporter implements Reporter {
         List<ValidationFinding> findings = result.getFindings();
 
         // Summary
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 16);
+        setFont(getBoldFont(), 16);
         drawText("Summary", MARGIN, yPosition);
         yPosition -= 25;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+        setFont(getRegularFont(), 12);
         drawText("Total Findings: " + findings.size(), MARGIN + 10, yPosition);
         yPosition -= 40;
 
@@ -461,7 +550,7 @@ public final class PdfReporter implements Reporter {
             .collect(Collectors.groupingBy(ValidationFinding::getSeverity, Collectors.counting()));
 
         if (!severityCounts.isEmpty()) {
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 14);
+            setFont(getBoldFont(), 14);
             drawText("Severity Distribution:", MARGIN + 10, yPosition);
             yPosition -= 30;
 
@@ -474,7 +563,7 @@ public final class PdfReporter implements Reporter {
         for (Map.Entry<String, List<ValidationFinding>> entry : byEndpoint.entrySet()) {
             checkPageSpace(60);
 
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 13);
+            setFont(getBoldFont(), 13);
             drawText("Endpoint: " + entry.getKey(), MARGIN, yPosition);
             yPosition -= 20;
 
@@ -491,12 +580,12 @@ public final class PdfReporter implements Reporter {
         PDPage sectionPage = addNewPage();
         tocEntries.add(new TocEntry("Active Security Testing", sectionPage, 0));
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 22);
+        setFont(getBoldFont(), 22);
         drawText("Active Security Testing", MARGIN, yPosition);
         yPosition -= 40;
 
         if (result.hasError()) {
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+            setFont(getRegularFont(), 12);
             currentContent.setNonStrokingColor(Color.RED);
             drawText("Error: " + result.getErrorMessage(), MARGIN, yPosition);
             currentContent.setNonStrokingColor(Color.BLACK);
@@ -506,11 +595,11 @@ public final class PdfReporter implements Reporter {
         ActiveAnalysisEngine.AnalysisReport activeReport = result.getReport();
 
         // Summary
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 16);
+        setFont(getBoldFont(), 16);
         drawText("Summary", MARGIN, yPosition);
         yPosition -= 25;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+        setFont(getRegularFont(), 12);
         drawText("Endpoints Scanned: " + activeReport.getEndpointCount(), MARGIN + 10, yPosition);
         yPosition -= 18;
         drawText("Vulnerable Endpoints: " + activeReport.getVulnerableEndpointCount(), MARGIN + 10, yPosition);
@@ -521,7 +610,7 @@ public final class PdfReporter implements Reporter {
         // Severity distribution with pie chart
         Map<Severity, Long> severityCounts = activeReport.getVulnerabilityCountBySeverity();
         if (!severityCounts.isEmpty()) {
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 14);
+            setFont(getBoldFont(), 14);
             drawText("Severity Distribution:", MARGIN + 10, yPosition);
             yPosition -= 30;
 
@@ -540,7 +629,7 @@ public final class PdfReporter implements Reporter {
 
         if (!typeCounts.isEmpty()) {
             checkPageSpace(200);
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 14);
+            setFont(getBoldFont(), 14);
             drawText("Vulnerability Types Distribution:", MARGIN + 10, yPosition);
             yPosition -= 30;
 
@@ -564,7 +653,7 @@ public final class PdfReporter implements Reporter {
 
             checkPageSpace(60);
 
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 13);
+            setFont(getBoldFont(), 13);
             drawText("Endpoint: " + endpointResult.endpoint().toString(), MARGIN, yPosition);
             yPosition -= 20;
 
@@ -581,12 +670,12 @@ public final class PdfReporter implements Reporter {
         PDPage sectionPage = addNewPage();
         tocEntries.add(new TocEntry("Contract Validation", sectionPage, 0));
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 22);
+        setFont(getBoldFont(), 22);
         drawText("Contract Validation", MARGIN, yPosition);
         yPosition -= 40;
 
         if (result.hasError()) {
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+            setFont(getRegularFont(), 12);
             currentContent.setNonStrokingColor(Color.RED);
             drawText("Error: " + result.getErrorMessage(), MARGIN, yPosition);
             currentContent.setNonStrokingColor(Color.BLACK);
@@ -596,11 +685,11 @@ public final class PdfReporter implements Reporter {
         ContractValidationEngine.ContractValidationReport contractReport = result.getReport();
 
         // Summary
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 16);
+        setFont(getBoldFont(), 16);
         drawText("Summary", MARGIN, yPosition);
         yPosition -= 25;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+        setFont(getRegularFont(), 12);
         drawText("Total Endpoints: " + contractReport.getTotalEndpoints(), MARGIN + 10, yPosition);
         yPosition -= 18;
         drawText("Total Divergences: " + contractReport.getTotalDivergences(), MARGIN + 10, yPosition);
@@ -615,7 +704,7 @@ public final class PdfReporter implements Reporter {
         }
 
         if (!divSeverityCounts.isEmpty()) {
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 14);
+            setFont(getBoldFont(), 14);
             drawText("Severity Distribution:", MARGIN + 10, yPosition);
             yPosition -= 30;
 
@@ -628,7 +717,7 @@ public final class PdfReporter implements Reporter {
         for (Map.Entry<String, List<Divergence>> entry : byEndpoint.entrySet()) {
             checkPageSpace(60);
 
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 13);
+            setFont(getBoldFont(), 13);
             drawText("Endpoint: " + entry.getKey(), MARGIN, yPosition);
             yPosition -= 20;
 
@@ -641,16 +730,134 @@ public final class PdfReporter implements Reporter {
         }
     }
 
+    private void generateDiscoverySection(AnalysisReport.DiscoveryAnalysisResult result) throws IOException {
+        PDPage sectionPage = addNewPage();
+        tocEntries.add(new TocEntry("Endpoint Discovery", sectionPage, 0));
+
+        setFont(getBoldFont(), 22);
+        drawText("Endpoint Discovery", MARGIN, yPosition);
+        yPosition -= 40;
+
+        if (result.hasError()) {
+            setFont(getRegularFont(), 12);
+            currentContent.setNonStrokingColor(Color.RED);
+            drawText("Error: " + result.getErrorMessage(), MARGIN, yPosition);
+            currentContent.setNonStrokingColor(Color.BLACK);
+            return;
+        }
+
+        EndpointDiscoveryEngine.DiscoveryReport discoveryReport = result.getReport();
+
+        // Summary
+        setFont(getBoldFont(), 16);
+        drawText("Summary", MARGIN, yPosition);
+        yPosition -= 25;
+
+        setFont(getRegularFont(), 12);
+        drawText("Strategy: " + discoveryReport.getConfig().getStrategy().name(), MARGIN + 10, yPosition);
+        yPosition -= 18;
+        drawText("Total Undocumented Endpoints: " + discoveryReport.getTotalCount(), MARGIN + 10, yPosition);
+        yPosition -= 18;
+        drawText("Critical Findings: " + discoveryReport.getCriticalResults().size(), MARGIN + 10, yPosition);
+        yPosition -= 18;
+        drawText("High Findings: " + discoveryReport.getHighResults().size(), MARGIN + 10, yPosition);
+        yPosition -= 18;
+        drawText("Duration: " + formatDuration(discoveryReport.getDuration()), MARGIN + 10, yPosition);
+        yPosition -= 40;
+
+        // Severity distribution with pie chart
+        Map<Severity, Long> severityCounts = discoveryReport.getCountBySeverity();
+        if (!severityCounts.isEmpty()) {
+            setFont(getBoldFont(), 14);
+            drawText("Severity Distribution:", MARGIN + 10, yPosition);
+            yPosition -= 30;
+
+            drawPieChart(severityCounts);
+            yPosition -= 30;
+        }
+
+        // Discovery method distribution
+        Map<String, Long> methodCounts = new LinkedHashMap<>();
+        for (var entry : discoveryReport.getCountByMethod().entrySet()) {
+            methodCounts.put(entry.getKey().name(), entry.getValue());
+        }
+
+        if (!methodCounts.isEmpty()) {
+            checkPageSpace(200);
+            setFont(getBoldFont(), 14);
+            drawText("Discovery Method Distribution:", MARGIN + 10, yPosition);
+            yPosition -= 30;
+
+            drawBarChart(methodCounts);
+            yPosition -= 30;
+        }
+
+        // Detailed results by severity
+        Map<Severity, List<DiscoveryResult>> groupedBySeverity = discoveryReport.getResults().stream()
+            .collect(Collectors.groupingBy(DiscoveryResult::getSeverity));
+
+        for (Severity severity : Severity.values()) {
+            List<DiscoveryResult> severityResults = groupedBySeverity.get(severity);
+            if (severityResults == null || severityResults.isEmpty()) {
+                continue;
+            }
+
+            checkPageSpace(60);
+
+            setFont(getBoldFont(), 14);
+            drawText(severity.getDisplayName() + " Severity Findings (" + severityResults.size() + ")",
+                MARGIN, yPosition);
+            yPosition -= 20;
+
+            for (DiscoveryResult discoveryResult : severityResults) {
+                checkPageSpace(50);
+                drawDiscoveryResult(discoveryResult);
+                yPosition -= 10;
+            }
+            yPosition -= 10;
+        }
+    }
+
+    private void drawDiscoveryResult(DiscoveryResult discoveryResult) throws IOException {
+        setFont(getBoldFont(), 11);
+        Color severityColor = getSeverityColor(discoveryResult.getSeverity().toString());
+        currentContent.setNonStrokingColor(severityColor);
+        drawText("[" + discoveryResult.getSeverity() + "] " +
+            discoveryResult.getEndpoint().getMethod() + " " +
+            discoveryResult.getEndpoint().getPath(), MARGIN + 20, yPosition);
+        currentContent.setNonStrokingColor(Color.BLACK);
+        yPosition -= 15;
+
+        setFont(getRegularFont(), 10);
+        drawText("Status Code: " + discoveryResult.getStatusCode(), MARGIN + 30, yPosition);
+        yPosition -= 12;
+        drawText("Discovery Method: " + discoveryResult.getDiscoveryMethod().name(), MARGIN + 30, yPosition);
+        yPosition -= 12;
+        drawText("Response Time: " + discoveryResult.getResponseTimeMs() + "ms", MARGIN + 30, yPosition);
+        yPosition -= 12;
+
+        if (discoveryResult.getReason() != null && !discoveryResult.getReason().isEmpty()) {
+            String reason = discoveryResult.getReason();
+            if (reason.length() > 100) {
+                reason = reason.substring(0, 97) + "...";
+            }
+            drawText("Reason: " + reason, MARGIN + 30, yPosition);
+            yPosition -= 12;
+        }
+
+        yPosition -= 3;
+    }
+
     private void generateKnowledgeBase() throws IOException {
         PDPage kbPage = addNewPage();
         kbStartPage = document.getPages().indexOf(kbPage);
         tocEntries.add(new TocEntry("Knowledge Base", kbPage, 0));
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 22);
+        setFont(getBoldFont(), 22);
         drawText("Knowledge Base", MARGIN, yPosition);
         yPosition -= 40;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 11);
+        setFont(getRegularFont(), 11);
         drawText("Detailed information about detected vulnerabilities", MARGIN, yPosition);
         yPosition -= 40;
 
@@ -661,30 +868,30 @@ public final class PdfReporter implements Reporter {
             checkPageSpace(200);
             kbEntry.page = currentPage;
 
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 16);
+            setFont(getBoldFont(), 16);
             drawText(kbEntry.vulnerabilityTitle != null ? kbEntry.vulnerabilityTitle : kbEntry.vulnerabilityType,
                 MARGIN, yPosition);
             yPosition -= 20;
 
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 11);
+            setFont(getRegularFont(), 11);
             currentContent.setNonStrokingColor(new Color(100, 100, 100));
             drawText("Type: " + kbEntry.vulnerabilityType, MARGIN, yPosition);
             currentContent.setNonStrokingColor(Color.BLACK);
             yPosition -= 25;
 
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 12);
+            setFont(getBoldFont(), 12);
             drawText("Description:", MARGIN + 10, yPosition);
             yPosition -= 15;
 
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 10);
+            setFont(getRegularFont(), 10);
             yPosition = drawWrappedText(kbEntry.description, MARGIN + 20, yPosition, PAGE_WIDTH - 2 * MARGIN - 20);
             yPosition -= 15;
 
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 12);
+            setFont(getBoldFont(), 12);
             drawText("Affected Endpoints (" + kbEntry.affectedEndpoints.size() + "):", MARGIN + 10, yPosition);
             yPosition -= 15;
 
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 9);
+            setFont(getRegularFont(), 9);
             for (String endpoint : kbEntry.affectedEndpoints.stream().limit(10).collect(Collectors.toList())) {
                 checkPageSpace(15);
                 drawText("  - " + endpoint, MARGIN + 20, yPosition);
@@ -698,11 +905,11 @@ public final class PdfReporter implements Reporter {
 
             if (kbEntry.reproductionExample != null && !kbEntry.reproductionExample.isEmpty()) {
                 checkPageSpace(60);
-                setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 12);
+                setFont(getBoldFont(), 12);
                 drawText("Reproduction Example:", MARGIN + 10, yPosition);
                 yPosition -= 15;
 
-                setFont(new PDType1Font(Standard14Fonts.FontName.COURIER), 9);
+                setFont(getMonoFont(), 9);
                 yPosition = drawTextWithLineBreaks(kbEntry.reproductionExample, MARGIN + 20, yPosition,
                     PAGE_WIDTH - 2 * MARGIN - 20);
                 yPosition -= 15;
@@ -710,11 +917,11 @@ public final class PdfReporter implements Reporter {
 
             if (kbEntry.recommendations != null && !kbEntry.recommendations.isEmpty()) {
                 checkPageSpace(40);
-                setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 12);
+                setFont(getBoldFont(), 12);
                 drawText("Recommendations:", MARGIN + 10, yPosition);
                 yPosition -= 15;
 
-                setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 10);
+                setFont(getRegularFont(), 10);
                 for (String rec : kbEntry.recommendations) {
                     checkPageSpace(30);
                     yPosition = drawWrappedText("  • " + rec, MARGIN + 20, yPosition,
@@ -757,7 +964,7 @@ public final class PdfReporter implements Reporter {
         float legendY = centerY - radius - 30;
         float legendX = centerX - 150;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 10);
+        setFont(getRegularFont(), 10);
         for (Map.Entry<Object, Long> entry : data.entrySet()) {
             checkPageSpace(15);
 
@@ -803,7 +1010,7 @@ public final class PdfReporter implements Reporter {
         float startX = MARGIN + 20;
         float currentY = yPosition;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 11);
+        setFont(getRegularFont(), 11);
 
         // Define vibrant colors for bars
         Color[] colors = new Color[]{
@@ -847,14 +1054,14 @@ public final class PdfReporter implements Reporter {
     }
 
     private void drawFinding(ValidationFinding finding) throws IOException {
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 11);
+        setFont(getBoldFont(), 11);
         Color severityColor = getSeverityColor(finding.getSeverity().toString());
         currentContent.setNonStrokingColor(severityColor);
         drawText("[" + finding.getSeverity() + "] " + finding.getType(), MARGIN + 20, yPosition);
         currentContent.setNonStrokingColor(Color.BLACK);
         yPosition -= 15;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 10);
+        setFont(getRegularFont(), 10);
         String details = finding.getDetails();
         if (details != null && details.length() > 100) {
             details = details.substring(0, 97) + "...";
@@ -868,7 +1075,7 @@ public final class PdfReporter implements Reporter {
             // KB will be generated later, so just store deferred link info
             String kbKey = vuln.getTitle() != null ? vuln.getTitle() : vuln.getType().name();
 
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 11);
+            setFont(getBoldFont(), 11);
 
             String title = "[" + vuln.getSeverity() + "] " + (vuln.getTitle() != null ? vuln.getTitle() : "Unknown");
             float titleY = yPosition;
@@ -885,7 +1092,7 @@ public final class PdfReporter implements Reporter {
             yPosition -= 15;
 
             // Draw description
-            setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 10);
+            setFont(getRegularFont(), 10);
             String description = vuln.getDescription();
             if (description != null) {
                 if (description.length() > 100) {
@@ -903,14 +1110,14 @@ public final class PdfReporter implements Reporter {
     }
 
     private void drawDivergence(Divergence div) throws IOException {
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 11);
+        setFont(getBoldFont(), 11);
         Color severityColor = getSeverityColor(div.getSeverity().name());
         currentContent.setNonStrokingColor(severityColor);
         drawText("[" + div.getSeverity() + "] " + div.getType(), MARGIN + 20, yPosition);
         currentContent.setNonStrokingColor(Color.BLACK);
         yPosition -= 15;
 
-        setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 10);
+        setFont(getRegularFont(), 10);
         String message = div.getMessage();
         if (message != null && message.length() > 100) {
             message = message.substring(0, 97) + "...";

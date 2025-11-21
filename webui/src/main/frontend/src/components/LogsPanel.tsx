@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { LogEntry } from '../types';
 import './LogsPanel.css';
 
@@ -9,6 +10,7 @@ interface LogsPanelProps {
 }
 
 export const LogsPanel: React.FC<LogsPanelProps> = ({ logs, autoScroll = true, autoCollapse = false }) => {
+  const { t } = useTranslation();
   const logsEndRef = useRef<HTMLDivElement>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -38,13 +40,13 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ logs, autoScroll = true, a
     <div className={`logs-panel ${isCollapsed ? 'collapsed' : ''}`}>
       <div className="logs-header" onClick={() => setIsCollapsed(!isCollapsed)}>
         <div className="logs-header-left">
-          <h3>Logs</h3>
-          <span className="logs-count">{logs.length} entries</span>
+          <h3>{t('logs.title')}</h3>
+          <span className="logs-count">{logs.length} {t('logs.entries')}</span>
         </div>
         <button
           className="collapse-button"
           type="button"
-          title={isCollapsed ? 'Expand logs' : 'Collapse logs'}
+          title={isCollapsed ? t('logs.expandLogs') : t('logs.collapseLogs')}
         >
           {isCollapsed ? '▼' : '▲'}
         </button>
@@ -52,7 +54,7 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ logs, autoScroll = true, a
       {!isCollapsed && (
         <div className="logs-content">
           {logs.length === 0 ? (
-            <div className="logs-empty">No logs yet. Start an analysis to see logs.</div>
+            <div className="logs-empty">{t('logs.noLogs')}</div>
           ) : (
             logs.map((log, index) => (
               <div key={index} className={`log-entry ${getLogLevelClass(log.level)}`}>

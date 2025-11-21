@@ -1,16 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ConfigurationPanel } from './components/ConfigurationPanel';
+import { AsyncConfigPanel } from './components/AsyncConfigPanel';
 import { LogsPanel } from './components/LogsPanel';
 import { ProgressBar } from './components/ProgressBar';
 import { ResultsPanel } from './components/ResultsPanel';
+import LanguageSwitcher from './components/LanguageSwitcher';
 import { api } from './services/api';
 import { wsService } from './services/websocket';
-import type { AnalysisRequest, LogEntry, AnalysisSession } from './types';
+import type { AnalysisRequest, AsyncAnalysisRequest, LogEntry, AnalysisSession } from './types';
 import './styles/App.css';
 
 const SESSION_STORAGE_KEY = 'api-security-analyzer-session-id';
 
 export const App: React.FC = () => {
+  const { t } = useTranslation();
+  const [specType, setSpecType] = useState<'openapi' | 'asyncapi' | 'unknown'>('unknown');
+  const [specLocation, setSpecLocation] = useState<string>(''); // Shared spec location
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('idle');
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -25,6 +31,7 @@ export const App: React.FC = () => {
   const [currentScanner, setCurrentScanner] = useState<string>('');
   const [totalVulnerabilitiesFound, setTotalVulnerabilitiesFound] = useState<number>(0);
   const [isRestoredSession, setIsRestoredSession] = useState<boolean>(false);
+  const [isCancelling, setIsCancelling] = useState<boolean>(false);
 
   // WebSocket connection and updates
   useEffect(() => {
@@ -82,13 +89,14 @@ export const App: React.FC = () => {
     setCurrentScanner(session.currentScanner || '');
     setTotalVulnerabilitiesFound(session.totalVulnerabilitiesFound || 0);
 
-    // If completed, set report
-    if (session.status === 'completed' && session.report) {
+    // Set report if available (regardless of status, to ensure it's displayed)
+    if (session.report) {
       setReport(session.report);
     }
 
     // Clear localStorage when session is finished (completed, failed, or cancelled)
     if (session.status === 'completed' || session.status === 'failed' || session.status === 'cancelled') {
+      setIsCancelling(false); // Reset cancelling state
       localStorage.removeItem(SESSION_STORAGE_KEY);
       console.log('Session finished, cleared from localStorage');
     }
@@ -140,15 +148,45 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleStartAsyncAnalysis = async (request: AsyncAnalysisRequest) => {
+    try {
+      setError(null);
+      setLogs([]);
+      setReport(null);
+      setStatus('pending');
+      setIsRestoredSession(false);
+
+      console.log('Starting AsyncAPI analysis:', request);
+      const response = await api.startAsyncAnalysis(request);
+
+      if (response.status === 'success' && response.sessionId) {
+        setSessionId(response.sessionId);
+        setStatus('running');
+
+        // Save session ID to localStorage for persistence across page reloads
+        localStorage.setItem(SESSION_STORAGE_KEY, response.sessionId);
+        console.log('AsyncAPI Session ID saved to localStorage:', response.sessionId);
+      } else {
+        setError(response.message || 'Failed to start AsyncAPI analysis');
+        setStatus('idle');
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to start async analysis');
+      setStatus('idle');
+    }
+  };
+
   const handleCancelAnalysis = async () => {
-    if (sessionId) {
+    if (sessionId && !isCancelling) {
       try {
+        setIsCancelling(true);
         await api.cancelAnalysis(sessionId);
-        setStatus('cancelled');
-        // Clear localStorage when manually cancelled
-        localStorage.removeItem(SESSION_STORAGE_KEY);
+        // Don't set status locally - wait for WebSocket update from backend
+        // This prevents UI from unlocking before analysis is actually stopped
+        console.log('Cancel request sent, waiting for backend confirmation...');
       } catch (err) {
         console.error('Error cancelling analysis:', err);
+        setIsCancelling(false);
       }
     }
   };
@@ -160,17 +198,36 @@ export const App: React.FC = () => {
       <div className="main-container">
         {/* Left Sidebar - Configuration */}
         <div className="sidebar">
-          <ConfigurationPanel
-            onStartAnalysis={handleStartAnalysis}
-            isAnalyzing={isAnalyzing}
-          />
+          {/* Auto-switch between OpenAPI and AsyncAPI panels */}
+          {specType === 'asyncapi' ? (
+            <AsyncConfigPanel
+              onStartAnalysis={handleStartAsyncAnalysis}
+              onSpecTypeDetected={setSpecType}
+              onSpecLocationChange={setSpecLocation}
+              specLocation={specLocation}
+              isAnalyzing={isAnalyzing}
+            />
+          ) : (
+            <ConfigurationPanel
+              onStartAnalysis={handleStartAnalysis}
+              onSpecTypeDetected={setSpecType}
+              onSpecLocationChange={setSpecLocation}
+              specLocation={specLocation}
+              isAnalyzing={isAnalyzing}
+            />
+          )}
         </div>
 
         {/* Right Content - Logs and Results */}
         <div className="content">
           <div className="header">
-            <h1>API Security Analyzer</h1>
-            <p>Comprehensive security analysis for OpenAPI and AsyncAPI specifications</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px' }}>
+              <div>
+                <h1>{t('app.title')}</h1>
+                <p>{t('app.subtitle')}</p>
+              </div>
+              <LanguageSwitcher />
+            </div>
             {sessionId && (
               <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
                 <span style={{ opacity: 0.9, fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -199,9 +256,15 @@ export const App: React.FC = () => {
                   <button
                     onClick={handleCancelAnalysis}
                     className="danger"
-                    style={{ padding: '4px 12px', fontSize: '0.875rem' }}
+                    disabled={isCancelling}
+                    style={{
+                      padding: '4px 12px',
+                      fontSize: '0.875rem',
+                      opacity: isCancelling ? 0.7 : 1,
+                      cursor: isCancelling ? 'not-allowed' : 'pointer'
+                    }}
                   >
-                    Cancel
+                    {isCancelling ? 'Cancelling...' : 'Cancel'}
                   </button>
                 )}
               </div>

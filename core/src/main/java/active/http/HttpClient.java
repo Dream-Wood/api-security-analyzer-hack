@@ -13,7 +13,7 @@ import active.model.TestResponse;
  *   <li>{@link CryptoProHttpClient} - клиент с поддержкой ГОСТ криптографии</li>
  * </ul>
  */
-public interface HttpClient {
+public interface HttpClient extends AutoCloseable {
 
     /**
      * Выполняет HTTP-запрос и возвращает ответ.

@@ -107,6 +107,16 @@ public final class PfxKeyStore {
     }
 
     /**
+     * Получить пароль для использования в KeyManager.
+     * ВАЖНО: Не храните результат, используйте сразу.
+     *
+     * @return массив символов пароля
+     */
+    public char[] getPassword() {
+        return password;
+    }
+
+    /**
      * Очистить пароль из памяти.
      */
     public void clearPassword() {

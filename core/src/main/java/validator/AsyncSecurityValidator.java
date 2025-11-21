@@ -7,6 +7,7 @@ import parser.AsyncSpecNormalizer;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Validates AsyncAPI specifications for security issues.
@@ -125,9 +126,9 @@ public final class AsyncSecurityValidator implements ContractValidator {
             return findings;
         }
 
-        List<ServerSpec> servers = normalizer.extractServers(asyncApiNode);
+        Map<String, ServerSpec> servers = normalizer.extractServers(asyncApiNode);
 
-        for (ServerSpec server : servers) {
+        for (ServerSpec server : servers.values()) {
             findings.addAll(validateServer(server));
         }
 

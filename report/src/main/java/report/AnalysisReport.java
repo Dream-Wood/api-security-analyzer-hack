@@ -1,6 +1,7 @@
 package report;
 
 import active.ActiveAnalysisEngine;
+import active.discovery.EndpointDiscoveryEngine;
 import active.validator.ContractValidationEngine;
 import model.ValidationFinding;
 
@@ -53,6 +54,7 @@ public final class AnalysisReport {
     private final StaticAnalysisResult staticResult;
     private final ActiveAnalysisResult activeResult;
     private final ContractAnalysisResult contractResult;
+    private final DiscoveryAnalysisResult discoveryResult;
 
     /**
      * Режим анализа API, определяющий какие типы проверок будут выполнены.
@@ -88,6 +90,7 @@ public final class AnalysisReport {
         this.staticResult = builder.staticResult;
         this.activeResult = builder.activeResult;
         this.contractResult = builder.contractResult;
+        this.discoveryResult = builder.discoveryResult;
     }
 
     public static Builder builder() {
@@ -126,6 +129,10 @@ public final class AnalysisReport {
         return contractResult;
     }
 
+    public DiscoveryAnalysisResult getDiscoveryResult() {
+        return discoveryResult;
+    }
+
     public boolean hasStaticResults() {
         return staticResult != null;
     }
@@ -138,6 +145,10 @@ public final class AnalysisReport {
         return contractResult != null;
     }
 
+    public boolean hasDiscoveryResults() {
+        return discoveryResult != null;
+    }
+
     public int getTotalIssueCount() {
         int count = 0;
         if (staticResult != null) {
@@ -148,6 +159,9 @@ public final class AnalysisReport {
         }
         if (contractResult != null && !contractResult.hasError() && contractResult.getReport() != null) {
             count += contractResult.getReport().getTotalDivergences();
+        }
+        if (discoveryResult != null && !discoveryResult.hasError() && discoveryResult.getReport() != null) {
+            count += discoveryResult.getReport().getTotalCount();
         }
         return count;
     }
@@ -276,6 +290,52 @@ public final class AnalysisReport {
         }
     }
 
+    /**
+     * Результаты обнаружения незадокументированных эндпоинтов.
+     *
+     * <p>Содержит информацию об API эндпоинтах, которые существуют в реальной
+     * реализации, но не описаны в спецификации. Использует различные стратегии
+     * обнаружения:
+     * <ul>
+     *   <li>Top-Down - исследование от корня к листьям</li>
+     *   <li>Bottom-Up - углубление от известных эндпоинтов</li>
+     *   <li>Hybrid - комбинация обоих подходов</li>
+     * </ul>
+     *
+     * <p>Каждый найденный эндпоинт содержит:
+     * <ul>
+     *   <li>Метод и путь эндпоинта</li>
+     *   <li>HTTP статус код ответа</li>
+     *   <li>Уровень серьезности находки</li>
+     *   <li>Метод обнаружения</li>
+     *   <li>Причину идентификации как существующего эндпоинта</li>
+     * </ul>
+     *
+     * <p>Объект является неизменяемым (immutable).
+     */
+    public static final class DiscoveryAnalysisResult {
+        private final EndpointDiscoveryEngine.DiscoveryReport report;
+        private final String errorMessage;
+
+        public DiscoveryAnalysisResult(EndpointDiscoveryEngine.DiscoveryReport report,
+                                      String errorMessage) {
+            this.report = report;
+            this.errorMessage = errorMessage;
+        }
+
+        public EndpointDiscoveryEngine.DiscoveryReport getReport() {
+            return report;
+        }
+
+        public String getErrorMessage() {
+            return errorMessage;
+        }
+
+        public boolean hasError() {
+            return errorMessage != null;
+        }
+    }
+
     public static class Builder {
         private String specLocation;
         private String specTitle;
@@ -285,6 +345,7 @@ public final class AnalysisReport {
         private StaticAnalysisResult staticResult;
         private ActiveAnalysisResult activeResult;
         private ContractAnalysisResult contractResult;
+        private DiscoveryAnalysisResult discoveryResult;
 
         public Builder specLocation(String specLocation) {
             this.specLocation = specLocation;
@@ -323,6 +384,11 @@ public final class AnalysisReport {
 
         public Builder contractResult(ContractAnalysisResult contractResult) {
             this.contractResult = contractResult;
+            return this;
+        }
+
+        public Builder discoveryResult(DiscoveryAnalysisResult discoveryResult) {
+            this.discoveryResult = discoveryResult;
             return this;
         }
 

@@ -1,6 +1,8 @@
 package report;
 
 import active.ActiveAnalysisEngine;
+import active.discovery.EndpointDiscoveryEngine;
+import active.discovery.model.DiscoveryResult;
 import active.model.VulnerabilityReport;
 import active.validator.ContractValidationEngine;
 import active.validator.model.Divergence;
@@ -103,6 +105,11 @@ public final class ConsoleReporter implements Reporter {
             printContractResults(writer, report.getContractResult());
         }
 
+        // Endpoint discovery results
+        if (report.hasDiscoveryResults()) {
+            printDiscoveryResults(writer, report.getDiscoveryResult());
+        }
+
         // Summary
         printSummary(writer, report);
     }
@@ -190,6 +197,95 @@ public final class ConsoleReporter implements Reporter {
             writer.println();
             printDetailedDivergences(writer, contractReport);
         }
+    }
+
+    private void printDiscoveryResults(PrintWriter writer, AnalysisReport.DiscoveryAnalysisResult result) {
+        printSection(writer, "Endpoint Discovery Results");
+
+        if (result.hasError()) {
+            printError(writer, result.getErrorMessage());
+            return;
+        }
+
+        EndpointDiscoveryEngine.DiscoveryReport discoveryReport = result.getReport();
+
+        writer.println("Strategy: " + discoveryReport.getConfig().getStrategy());
+        writer.println("Total undocumented endpoints found: " + colorize(
+            String.valueOf(discoveryReport.getTotalCount()), ANSI_BOLD));
+        writer.println("Critical findings: " + colorize(
+            String.valueOf(discoveryReport.getCriticalResults().size()), ANSI_RED));
+        writer.println("High findings: " + colorize(
+            String.valueOf(discoveryReport.getHighResults().size()), ANSI_YELLOW));
+        writer.println("Duration: " + formatDuration(discoveryReport.getDuration()));
+        writer.println();
+
+        if (discoveryReport.getTotalCount() == 0) {
+            printSuccess(writer, "No undocumented endpoints found!");
+        } else {
+            printDiscoverySummary(writer, discoveryReport);
+            writer.println();
+            printDetailedDiscoveryResults(writer, discoveryReport);
+        }
+    }
+
+    private void printDiscoverySummary(PrintWriter writer, EndpointDiscoveryEngine.DiscoveryReport report) {
+        Map<Severity, Long> severityCounts = report.getCountBySeverity();
+
+        writer.println(colorize("By Severity:", ANSI_BOLD));
+        for (Severity severity : Severity.values()) {
+            long count = severityCounts.getOrDefault(severity, 0L);
+            if (count > 0) {
+                String severityColor = getSeverityColor(severity);
+                String icon = getSeverityIcon(severity);
+                writer.println("  " + colorize(icon + " " + severity.getDisplayName() + ": " + count, severityColor));
+            }
+        }
+
+        writer.println();
+        writer.println(colorize("By Discovery Method:", ANSI_BOLD));
+        report.getCountByMethod().forEach((method, count) -> {
+            writer.println("  • " + method.name() + ": " + count);
+        });
+    }
+
+    private void printDetailedDiscoveryResults(PrintWriter writer, EndpointDiscoveryEngine.DiscoveryReport report) {
+        Map<Severity, List<DiscoveryResult>> groupedBySeverity = report.getResults().stream()
+            .collect(Collectors.groupingBy(DiscoveryResult::getSeverity));
+
+        for (Severity severity : Severity.values()) {
+            List<DiscoveryResult> severityResults = groupedBySeverity.get(severity);
+            if (severityResults == null || severityResults.isEmpty()) {
+                continue;
+            }
+
+            writer.println();
+            writer.println(colorize(ANSI_BOLD + "[" + severity.getDisplayName().toUpperCase() + "]",
+                getSeverityColor(severity)));
+            writer.println();
+
+            for (DiscoveryResult discoveryResult : severityResults) {
+                printDiscoveryResult(writer, discoveryResult);
+            }
+        }
+    }
+
+    private void printDiscoveryResult(PrintWriter writer, DiscoveryResult discoveryResult) {
+        String severityColor = getSeverityColor(discoveryResult.getSeverity());
+        String icon = getSeverityIcon(discoveryResult.getSeverity());
+
+        writer.println(colorize(icon + " " + discoveryResult.getEndpoint().getMethod() + " " +
+            discoveryResult.getEndpoint().getPath(), severityColor));
+
+        writer.println("  Status Code: " + discoveryResult.getStatusCode());
+        writer.println("  Discovery Method: " + discoveryResult.getDiscoveryMethod().name());
+        writer.println("  Response Time: " + discoveryResult.getResponseTimeMs() + "ms");
+
+        if (discoveryResult.getReason() != null) {
+            writer.println("  Reason: " + discoveryResult.getReason());
+        }
+
+        writer.println("  " + colorize("Severity: " + discoveryResult.getSeverity().getDisplayName(), severityColor));
+        writer.println();
     }
 
     private void printDivergencesSummary(PrintWriter writer, ContractValidationEngine.ContractValidationReport report) {
@@ -419,6 +515,11 @@ public final class ConsoleReporter implements Reporter {
             if (report.hasContractResults() && !report.getContractResult().hasError()) {
                 writer.println("  Contract divergences: " +
                     report.getContractResult().getReport().getTotalDivergences());
+            }
+
+            if (report.hasDiscoveryResults() && !report.getDiscoveryResult().hasError()) {
+                writer.println("  Undocumented endpoints: " +
+                    report.getDiscoveryResult().getReport().getTotalCount());
             }
         }
 

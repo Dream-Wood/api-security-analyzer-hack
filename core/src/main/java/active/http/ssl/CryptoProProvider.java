@@ -42,15 +42,20 @@ public final class CryptoProProvider {
      * Типы провайдеров CryptoPro.
      */
     public enum ProviderType {
-        /** Основной Java Crypto Provider */
-        JCP("ru.CryptoPro.JCP.JCP", true),
-        JCSP("ru.CryptoPro.JCSP.JCSP", true),
+        /** Java Crypto Service Provider (новая версия) */
+        JCSP("ru.CryptoPro.JCSP.JCSP", false),
+
+        /** Java Crypto Provider (старая версия) */
+        JCP("ru.CryptoPro.JCP.JCP", false),
+
+        /** SSPI SSL Provider (предпочтительный для Windows) */
+        SSPISSL("ru.CryptoPro.sspiSSL.SSPISSL", false),
 
         /** SSL/TLS Provider для протоколов ГОСТ */
         SSL("ru.CryptoPro.ssl.Provider", true),
 
         /** Провайдер дополнительных криптографических операций */
-        CRYPTO("ru.CryptoPro.Crypto.CryptoProvider", true),
+        CRYPTO("ru.CryptoPro.Crypto.CryptoProvider", false),
 
         /** Провайдер проверки отзыва сертификатов (опционально) */
         REVCHECK("ru.CryptoPro.reprov.RevCheck", false);
@@ -80,6 +85,14 @@ public final class CryptoProProvider {
      * Инициализировать все провайдеры безопасности CryptoPro.
      * Этот метод идемпотентен и может быть вызван несколько раз безопасно.
      *
+     * <p>Порядок загрузки провайдеров критичен:
+     * <ol>
+     *   <li>Сначала пытаемся загрузить JCSP (новая версия)</li>
+     *   <li>Если JCSP есть: загружаем SSPISSL (или SSL если SSPISSL недоступен)</li>
+     *   <li>Если JCSP нет: загружаем JCP + Crypto + SSL (старая версия)</li>
+     *   <li>В конце загружаем RevCheck (опционально)</li>
+     * </ol>
+     *
      * @throws RuntimeException если необходимые провайдеры не могут быть загружены
      */
     public static synchronized void initialize() {
@@ -90,20 +103,86 @@ public final class CryptoProProvider {
 
         logger.info("Initializing CryptoPro security providers...");
 
-        for (ProviderType type : ProviderType.values()) {
+        // Установить системные свойства для CryptoPro
+        configureSystemProperties();
+
+        // Загрузить провайдеры в правильном порядке
+        boolean hasSSLProvider = false;
+
+        // Шаг 1: Попробовать загрузить JCSP (новая версия)
+        try {
+            registerProvider(ProviderType.JCSP);
+            logger.info("Using JCSP (new version) provider");
+
+            // Если JCSP успешно загружен, пробуем SSPISSL или SSL
             try {
-                registerProvider(type);
+                registerProvider(ProviderType.SSPISSL);
+                hasSSLProvider = true;
+                logger.info("Using SSPISSL provider (Windows optimized)");
             } catch (ProviderRegistrationException e) {
-                if (type.isRequired()) {
+                logger.fine("SSPISSL not available, trying SSL provider");
+                try {
+                    registerProvider(ProviderType.SSL);
+                    hasSSLProvider = true;
+                    logger.info("Using SSL provider");
+                } catch (ProviderRegistrationException ex) {
                     throw new RuntimeException(
-                        "Failed to initialize required CryptoPro provider: " + type.name() + ". " +
-                        "Ensure CryptoPro JCP libraries are properly installed and licensed.",
-                        e
+                        "Failed to load SSL provider. Ensure CryptoPro SSL libraries are installed.",
+                        ex
                     );
-                } else {
-                    logger.fine("Optional provider not available: " + type.name());
                 }
             }
+
+        } catch (ProviderRegistrationException e) {
+            logger.info("JCSP not available, trying JCP (old version)");
+
+            // Шаг 2: Если JCSP недоступен, используем старую версию (JCP)
+            try {
+                registerProvider(ProviderType.JCP);
+                logger.info("Using JCP (old version) provider");
+
+                // Загрузить Crypto provider
+                try {
+                    registerProvider(ProviderType.CRYPTO);
+                } catch (ProviderRegistrationException ex) {
+                    logger.warning("Crypto provider not available: " + ex.getMessage());
+                }
+
+                // Загрузить SSL provider
+                try {
+                    registerProvider(ProviderType.SSL);
+                    hasSSLProvider = true;
+                    logger.info("Using SSL provider");
+                } catch (ProviderRegistrationException ex) {
+                    throw new RuntimeException(
+                        "Failed to load SSL provider. Ensure CryptoPro SSL libraries are installed.",
+                        ex
+                    );
+                }
+
+            } catch (ProviderRegistrationException ex) {
+                throw new RuntimeException(
+                    "Failed to initialize CryptoPro providers. " +
+                    "Neither JCSP nor JCP could be loaded. " +
+                    "Ensure CryptoPro JCP/JCSP libraries are properly installed and licensed.",
+                    ex
+                );
+            }
+        }
+
+        // Шаг 3: Загрузить RevCheck (опционально)
+        try {
+            registerProvider(ProviderType.REVCHECK);
+            logger.info("RevCheck provider loaded (certificate revocation checking enabled)");
+        } catch (ProviderRegistrationException e) {
+            logger.fine("RevCheck provider not available (certificate revocation checking disabled)");
+        }
+
+        if (!hasSSLProvider) {
+            throw new RuntimeException(
+                "No SSL provider was loaded. Cannot create GOST TLS connections. " +
+                "Ensure CryptoPro SSL libraries are properly installed."
+            );
         }
 
         initialized = true;
@@ -113,6 +192,30 @@ public final class CryptoProProvider {
         if (logger.isLoggable(Level.FINE)) {
             logRegisteredProviders();
         }
+    }
+
+    /**
+     * Настроить системные свойства для CryptoPro.
+     */
+    private static void configureSystemProperties() {
+        // Certificate revocation checking properties
+        System.setProperty("com.ibm.security.enableCRLDP", "true");
+        System.setProperty("com.sun.security.enableCRLDP", "true");
+        System.setProperty("com.sun.security.enableAIAcaIssuers", "true");
+        System.setProperty("ru.CryptoPro.reprov.enableAIAcaIssuers", "true");
+        System.setProperty("java.util.prefs.syncInterval", "99999");
+
+        // Disable hostname verification in CryptoPro SSL (для совместимости)
+        System.setProperty("ru.CryptoPro.ssl.checkHostname", "false");
+        System.setProperty("com.sun.net.ssl.checkRevocation", "false");
+
+        // Enable detailed logging for troubleshooting
+        if (logger.isLoggable(Level.FINE)) {
+            java.util.logging.Logger.getLogger("ru.CryptoPro.ssl.SSLLogger").setLevel(java.util.logging.Level.ALL);
+            java.util.logging.Logger.getLogger("ru.CryptoPro.JCSP.JCSPLogger").setLevel(java.util.logging.Level.ALL);
+        }
+
+        logger.fine("CryptoPro system properties configured");
     }
 
     /**

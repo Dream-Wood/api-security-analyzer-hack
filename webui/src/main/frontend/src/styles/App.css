@@ -299,6 +299,48 @@ input:hover:not(:focus), select:hover:not(:focus), textarea:hover:not(:focus) {
   color: #374151;
 }
 
+/* Language Switcher */
+.language-switcher {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: var(--border-radius);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  position: relative;
+  z-index: 10; /* Ensure it's above header::before */
+  backdrop-filter: blur(10px);
+}
+
+.language-switcher label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.language-switcher select {
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  outline: none;
+}
+
+.language-switcher select:hover {
+  border-color: var(--primary-color);
+}
+
+.language-switcher select:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
 @media (max-width: 768px) {
   .app {
     flex-direction: column;
@@ -309,5 +351,9 @@ input:hover:not(:focus), select:hover:not(:focus), textarea:hover:not(:focus) {
     border-right: none;
     border-bottom: 1px solid var(--border-color);
     max-height: 50vh;
+  }
+
+  .language-switcher {
+    margin-top: var(--spacing-sm);
   }
 }

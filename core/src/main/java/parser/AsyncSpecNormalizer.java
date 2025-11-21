@@ -67,14 +67,14 @@ public final class AsyncSpecNormalizer {
      * Extracts server specifications from AsyncAPI.
      *
      * @param asyncApiNode the AsyncAPI specification as JsonNode
-     * @return list of server specifications
+     * @return map of server specifications
      */
-    public List<ServerSpec> extractServers(JsonNode asyncApiNode) {
+    public Map<String, ServerSpec> extractServers(JsonNode asyncApiNode) {
         if (!asyncApiNode.has("servers")) {
-            return Collections.emptyList();
+            return Collections.emptyMap();
         }
 
-        List<ServerSpec> servers = new ArrayList<>();
+        Map<String, ServerSpec> servers = new HashMap<>();
         JsonNode serversNode = asyncApiNode.get("servers");
 
         Iterator<Map.Entry<String, JsonNode>> serverIterator = serversNode.fields();
@@ -84,7 +84,7 @@ public final class AsyncSpecNormalizer {
             JsonNode serverNode = entry.getValue();
 
             ServerSpec serverSpec = normalizeServer(serverName, serverNode);
-            servers.add(serverSpec);
+            servers.put(serverName, serverSpec);
         }
 
         return servers;

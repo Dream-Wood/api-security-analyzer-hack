@@ -138,11 +138,14 @@ public final class SpecTypeDetector {
         try {
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(30))
+                    .followRedirects(HttpClient.Redirect.NORMAL)
                     .build();
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(Duration.ofSeconds(30))
+                    .header("Accept", "application/yaml, application/json, text/yaml, text/plain, */*")
+                    .header("User-Agent", "API-Security-Analyzer/1.0")
                     .GET()
                     .build();
 

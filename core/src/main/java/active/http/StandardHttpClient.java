@@ -31,6 +31,14 @@ import java.util.logging.Logger;
 public final class StandardHttpClient implements HttpClient {
     private static final Logger logger = Logger.getLogger(StandardHttpClient.class.getName());
 
+    // Enable HTTP Keep-Alive globally for connection pooling (reduces port exhaustion)
+    // This allows HttpURLConnection to reuse TCP connections instead of creating new ones
+    static {
+        System.setProperty("http.keepAlive", "true");
+        System.setProperty("http.maxConnections", "20"); // Max connections per destination
+        logger.fine("HTTP Keep-Alive enabled: http.keepAlive=true, http.maxConnections=20");
+    }
+
     private final HttpClientConfig config;
 
     public StandardHttpClient(HttpClientConfig config) {
@@ -95,7 +103,9 @@ public final class StandardHttpClient implements HttpClient {
             Map<String, List<String>> headers = new LinkedHashMap<>(connection.getHeaderFields());
             headers.remove(null); // Remove status line
 
-            connection.disconnect();
+            // Don't call disconnect() - with Keep-Alive enabled, connections are pooled
+            // and reused. Calling disconnect() defeats the purpose of connection pooling.
+            // The connection will be returned to the pool automatically.
 
             return TestResponse.builder()
                 .statusCode(statusCode)

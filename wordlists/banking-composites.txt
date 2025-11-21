@@ -1,0 +1,38 @@
+# Banking and financial composite endpoints
+# Priority: high (common in banking APIs)
+# Format: compound-names with hyphens
+account-consents
+payment-consents
+product-agreement-consents
+product-agreements
+product-offers
+product-applications
+customer-leads
+bank-token
+well-known
+jwks.json
+account-access
+payment-initiation
+domestic-payments
+international-payments
+standing-orders
+scheduled-payments
+account-requests
+balance-transfers
+card-accounts
+party
+beneficiaries
+direct-debits
+statements
+funds-confirmations
+event-notifications
+callback-urls
+wire-transfer
+wire-transfers
+download-statement
+download-statements
+statement
+cards
+banking
+loans
+loan-applications

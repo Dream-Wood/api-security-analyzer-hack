@@ -11,6 +11,8 @@ public final class ScanContext {
     private final Map<String, Object> sharedData;
     private final boolean verbose;
     private final int maxRequests;
+    private final ScanIntensity scanIntensity;
+    private final int maxRequestsPerEndpoint;
 
     private ScanContext(Builder builder) {
         this.baseUrl = Objects.requireNonNull(builder.baseUrl, "baseUrl cannot be null");
@@ -22,6 +24,8 @@ public final class ScanContext {
             : new HashMap<>();
         this.verbose = builder.verbose;
         this.maxRequests = builder.maxRequests > 0 ? builder.maxRequests : 100;
+        this.scanIntensity = builder.scanIntensity != null ? builder.scanIntensity : ScanIntensity.MEDIUM;
+        this.maxRequestsPerEndpoint = builder.maxRequestsPerEndpoint > 0 ? builder.maxRequestsPerEndpoint : 100;
     }
 
     public static Builder builder() {
@@ -46,6 +50,14 @@ public final class ScanContext {
 
     public int getMaxRequests() {
         return maxRequests;
+    }
+
+    public ScanIntensity getScanIntensity() {
+        return scanIntensity;
+    }
+
+    public int getMaxRequestsPerEndpoint() {
+        return maxRequestsPerEndpoint;
     }
 
     public Optional<Object> getSharedData(String key) {
@@ -73,6 +85,8 @@ public final class ScanContext {
         private Map<String, Object> sharedData;
         private boolean verbose;
         private int maxRequests;
+        private ScanIntensity scanIntensity;
+        private int maxRequestsPerEndpoint;
 
         public Builder baseUrl(String baseUrl) {
             this.baseUrl = baseUrl;
@@ -104,6 +118,16 @@ public final class ScanContext {
 
         public Builder maxRequests(int maxRequests) {
             this.maxRequests = maxRequests;
+            return this;
+        }
+
+        public Builder scanIntensity(ScanIntensity scanIntensity) {
+            this.scanIntensity = scanIntensity;
+            return this;
+        }
+
+        public Builder maxRequestsPerEndpoint(int maxRequestsPerEndpoint) {
+            this.maxRequestsPerEndpoint = maxRequestsPerEndpoint;
             return this;
         }
 

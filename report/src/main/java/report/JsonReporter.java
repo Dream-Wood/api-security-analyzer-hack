@@ -1,6 +1,8 @@
 package report;
 
 import active.ActiveAnalysisEngine;
+import active.discovery.EndpointDiscoveryEngine;
+import active.discovery.model.DiscoveryResult;
 import active.model.VulnerabilityReport;
 import active.validator.ContractValidationEngine;
 import active.validator.model.Divergence;
@@ -97,6 +99,11 @@ public final class JsonReporter implements Reporter {
         // Contract validation
         if (report.hasContractResults()) {
             jsonReport.put("contractValidation", buildContractSection(report.getContractResult()));
+        }
+
+        // Endpoint discovery
+        if (report.hasDiscoveryResults()) {
+            jsonReport.put("endpointDiscovery", buildDiscoverySection(report.getDiscoveryResult()));
         }
 
         // Summary
@@ -243,6 +250,54 @@ public final class JsonReporter implements Reporter {
         return contractSection;
     }
 
+    private Map<String, Object> buildDiscoverySection(AnalysisReport.DiscoveryAnalysisResult result) {
+        Map<String, Object> discoverySection = new LinkedHashMap<>();
+
+        if (result.hasError()) {
+            discoverySection.put("error", result.getErrorMessage());
+            return discoverySection;
+        }
+
+        EndpointDiscoveryEngine.DiscoveryReport discoveryReport = result.getReport();
+
+        discoverySection.put("strategy", discoveryReport.getConfig().getStrategy().name());
+        discoverySection.put("totalEndpointsFound", discoveryReport.getTotalCount());
+        discoverySection.put("criticalFindings", discoveryReport.getCriticalResults().size());
+        discoverySection.put("highFindings", discoveryReport.getHighResults().size());
+        discoverySection.put("durationSeconds", discoveryReport.getDuration().getSeconds());
+
+        // By severity
+        Map<String, Long> bySeverity = new LinkedHashMap<>();
+        discoveryReport.getCountBySeverity()
+            .forEach((severity, count) -> bySeverity.put(severity.toString(), count));
+        discoverySection.put("endpointsBySeverity", bySeverity);
+
+        // By discovery method
+        Map<String, Long> byMethod = new LinkedHashMap<>();
+        discoveryReport.getCountByMethod()
+            .forEach((method, count) -> byMethod.put(method.name(), count));
+        discoverySection.put("endpointsByMethod", byMethod);
+
+        // Detailed results
+        List<Map<String, Object>> endpoints = new ArrayList<>();
+        for (DiscoveryResult discoveryResult : discoveryReport.getResults()) {
+            Map<String, Object> endpointMap = new LinkedHashMap<>();
+            endpointMap.put("method", discoveryResult.getEndpoint().getMethod());
+            endpointMap.put("path", discoveryResult.getEndpoint().getPath());
+            endpointMap.put("statusCode", discoveryResult.getStatusCode());
+            endpointMap.put("severity", discoveryResult.getSeverity().toString());
+            endpointMap.put("discoveryMethod", discoveryResult.getDiscoveryMethod().name());
+            endpointMap.put("responseTimeMs", discoveryResult.getResponseTimeMs());
+            endpointMap.put("reason", discoveryResult.getReason());
+            endpointMap.put("discoveredAt", discoveryResult.getDiscoveredAt().toString());
+            endpointMap.put("metadata", discoveryResult.getMetadata());
+            endpoints.add(endpointMap);
+        }
+        discoverySection.put("endpoints", endpoints);
+
+        return discoverySection;
+    }
+
     private Map<String, Object> buildSummary(AnalysisReport report) {
         Map<String, Object> summary = new LinkedHashMap<>();
 
@@ -260,6 +315,11 @@ public final class JsonReporter implements Reporter {
         if (report.hasContractResults() && !report.getContractResult().hasError()) {
             summary.put("contractDivergences",
                 report.getContractResult().getReport().getTotalDivergences());
+        }
+
+        if (report.hasDiscoveryResults() && !report.getDiscoveryResult().hasError()) {
+            summary.put("undocumentedEndpoints",
+                report.getDiscoveryResult().getReport().getTotalCount());
         }
 
         return summary;

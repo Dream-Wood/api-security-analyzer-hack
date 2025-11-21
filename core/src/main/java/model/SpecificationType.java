@@ -12,7 +12,7 @@ public enum SpecificationType {
     /**
      * AsyncAPI specification for event-driven APIs.
      */
-    ASYNCAPI("AsyncAPI", "asyncapi", false);
+    ASYNCAPI("AsyncAPI", "asyncapi", true);
 
     private final String displayName;
     private final String schemaField;

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import './ProgressBar.css';
 
 interface ProgressBarProps {
@@ -24,6 +25,8 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   currentScanner,
   totalVulnerabilitiesFound,
 }) => {
+  const { t } = useTranslation();
+
   const formatTime = (milliseconds: number): string => {
     if (milliseconds === 0 || !isFinite(milliseconds)) return '--:--';
 
@@ -42,17 +45,18 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   };
 
   const formatPhase = (phase: string): string => {
-    if (!phase) return 'Initializing...';
+    if (!phase) return t('analysis.phaseInitializing');
 
     const phaseMap: Record<string, string> = {
-      'initialization': 'Initializing',
-      'parsing': 'Parsing specification',
-      'static-analysis': 'Static analysis',
-      'active-analysis': 'Active security scanning',
-      'authentication': 'Authenticating',
-      'contract-validation': 'Contract validation',
-      'scanning': 'Scanning for vulnerabilities',
-      'analyzing': 'Analyzing results'
+      'initialization': t('analysis.phaseInitializing'),
+      'parsing': t('analysis.phaseParsing'),
+      'static-analysis': t('analysis.phaseStaticAnalysis'),
+      'active-analysis': t('analysis.phaseActiveAnalysis'),
+      'authentication': t('analysis.phaseAuthentication'),
+      'contract-validation': t('analysis.phaseContractValidation'),
+      'endpoint-discovery': t('analysis.phaseEndpointDiscovery'),
+      'scanning': t('analysis.phaseScanning'),
+      'analyzing': t('analysis.phaseAnalyzing')
     };
 
     return phaseMap[phase] || phase.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -72,17 +76,17 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
           </span>
           {totalVulnerabilitiesFound !== undefined && totalVulnerabilitiesFound > 0 && (
             <span className="progress-vulns">
-              🔍 {totalVulnerabilitiesFound} vuln{totalVulnerabilitiesFound !== 1 ? 's' : ''}
+              🔍 {totalVulnerabilitiesFound} {t('analysis.vulns')}{totalVulnerabilitiesFound !== 1 ? 's' : ''}
             </span>
           )}
         </div>
         <div className="progress-details">
           <span className="progress-percentage">
-            {progressPercentage}%
+            {progressPercentage.toFixed(1)}%
           </span>
           {isRunning && estimatedTimeRemaining > 0 && (
             <span className="progress-eta">
-              ETA: {formatTime(estimatedTimeRemaining)}
+              {t('analysis.eta')}: {formatTime(estimatedTimeRemaining)}
             </span>
           )}
         </div>
@@ -92,12 +96,12 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
         <div className="progress-details-line">
           {currentEndpoint && (
             <span className="progress-detail-item">
-              <strong>Endpoint:</strong> {currentEndpoint}
+              <strong>{t('analysis.endpoint')}:</strong> {currentEndpoint}
             </span>
           )}
           {currentScanner && (
             <span className="progress-detail-item">
-              <strong>Scanner:</strong> {currentScanner}
+              <strong>{t('analysis.scanner')}:</strong> {currentScanner}
             </span>
           )}
         </div>

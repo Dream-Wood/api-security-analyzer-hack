@@ -1,0 +1,269 @@
+﻿asyncapi: 2.6.0
+info:
+  title: Vulnerable WebSocket API
+  version: 1.0.0
+  description: |
+    ⚠️ INTENTIONALLY VULNERABLE WebSocket API for security testing demo
+    DO NOT USE IN PRODUCTION
+
+    This API demonstrates common AsyncAPI security vulnerabilities:
+    - Unauthorized subscription to sensitive channels
+    - Unauthorized publishing to critical channels
+    - Missing encryption (ws:// instead of wss://)
+    - Message injection vulnerabilities
+    - Lack of replay attack protection
+    - Schema validation bypass
+    - Sensitive data exposure
+  license:
+    name: MIT
+
+servers:
+  development:
+    url: ws://localhost:7080
+    protocol: ws
+    description: Development server (INSECURE - no TLS!)
+    security: []  # ⚠️ No security defined!
+
+channels:
+  user.profile:
+    description: User profile updates (contains PII - SSN, credit cards, emails)
+    subscribe:
+      operationId: subscribeUserProfile
+      summary: Subscribe to user profile updates
+      description: ⚠️ VULNERABLE - No authentication required, exposes sensitive PII
+      message:
+        $ref: '#/components/messages/UserProfile'
+      security: []  # ⚠️ No security!
+
+  payments:
+    description: Payment transactions (contains full credit card data)
+    subscribe:
+      operationId: subscribePayments
+      summary: Subscribe to payment updates
+      description: ⚠️ VULNERABLE - No authentication, exposes credit card numbers
+      message:
+        $ref: '#/components/messages/Payment'
+      security: []
+    publish:
+      operationId: publishPayment
+      summary: Create a new payment
+      description: ⚠️ VULNERABLE - No authentication, no replay protection
+      message:
+        $ref: '#/components/messages/PaymentCreate'
+      security: []
+
+  orders:
+    description: Order management
+    publish:
+      operationId: createOrder
+      summary: Create a new order
+      description: ⚠️ VULNERABLE - No authentication, replay attacks possible
+      message:
+        $ref: '#/components/messages/OrderCreate'
+      security: []
+
+  admin.commands:
+    description: Administrative commands
+    subscribe:
+      operationId: subscribeAdminCommands
+      summary: Subscribe to admin commands
+      description: ⚠️ CRITICAL VULNERABILITY - Admin channel with no auth
+      message:
+        $ref: '#/components/messages/AdminCommand'
+      security: []
+    publish:
+      operationId: executeAdminCommand
+      summary: Execute administrative command
+      description: ⚠️ CRITICAL VULNERABILITY - Command injection possible
+      message:
+        $ref: '#/components/messages/AdminCommand'
+      security: []
+
+  api.keys:
+    description: API keys and secrets
+    subscribe:
+      operationId: subscribeApiKeys
+      summary: Subscribe to API key updates
+      description: ⚠️ CRITICAL - Exposes AWS keys, JWT secrets
+      message:
+        $ref: '#/components/messages/ApiKeys'
+      security: []
+
+  user.update:
+    description: User data updates
+    publish:
+      operationId: updateUser
+      summary: Update user information
+      description: ⚠️ VULNERABLE - No schema validation, prototype pollution possible
+      message:
+        $ref: '#/components/messages/UserUpdate'
+      security: []
+
+  query:
+    description: Database queries
+    publish:
+      operationId: executeQuery
+      summary: Execute database query
+      description: ⚠️ CRITICAL - SQL injection vulnerability
+      message:
+        $ref: '#/components/messages/Query'
+      security: []
+
+components:
+  messages:
+    UserProfile:
+      name: UserProfile
+      title: User Profile Message
+      summary: Contains user profile with sensitive PII
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          id:
+            type: integer
+          name:
+            type: string
+          email:
+            type: string
+            format: email
+            description: ⚠️ PII - Email address
+          phone:
+            type: string
+            description: ⚠️ PII - Phone number
+          ssn:
+            type: string
+            description: ⚠️ CRITICAL PII - Social Security Number
+          creditCard:
+            type: string
+            description: ⚠️ CRITICAL - Full credit card number
+          cvv:
+            type: string
+            description: ⚠️ CRITICAL - CVV code
+          apiKey:
+            type: string
+            description: ⚠️ CRITICAL - API key exposed
+
+    Payment:
+      name: Payment
+      title: Payment Transaction
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          id:
+            type: string
+          userId:
+            type: integer
+          amount:
+            type: number
+          creditCard:
+            type: string
+            description: ⚠️ CRITICAL - Full credit card number
+          timestamp:
+            type: string
+            format: date-time
+
+    PaymentCreate:
+      name: PaymentCreate
+      title: Create Payment Request
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          userId:
+            type: integer
+          amount:
+            type: number
+          creditCard:
+            type: string
+          messageId:
+            type: string
+            description: ⚠️ Not validated - replay attacks possible
+
+    OrderCreate:
+      name: OrderCreate
+      title: Create Order Request
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          orderId:
+            type: string
+          userId:
+            type: integer
+          items:
+            type: array
+            items:
+              type: object
+          total:
+            type: number
+          messageId:
+            type: string
+            description: ⚠️ Not validated - replay attacks possible
+
+    AdminCommand:
+      name: AdminCommand
+      title: Administrative Command
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          command:
+            type: string
+            description: ⚠️ CRITICAL - Command injection possible
+          args:
+            type: object
+
+    ApiKeys:
+      name: ApiKeys
+      title: API Keys and Secrets
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          awsAccessKey:
+            type: string
+            description: ⚠️ CRITICAL - AWS Access Key
+          awsSecretKey:
+            type: string
+            description: ⚠️ CRITICAL - AWS Secret Key
+          jwtSecret:
+            type: string
+            description: ⚠️ CRITICAL - JWT signing secret
+
+    UserUpdate:
+      name: UserUpdate
+      title: User Update Request
+      contentType: application/json
+      payload:
+        type: object
+        description: ⚠️ No schema validation - prototype pollution possible
+        additionalProperties: true
+
+    Query:
+      name: Query
+      title: Database Query Request
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          table:
+            type: string
+            description: ⚠️ SQL injection - not sanitized
+          filter:
+            type: string
+            description: ⚠️ SQL injection - not sanitized
+
+  securitySchemes:
+    # ⚠️ Defined but NOT ENFORCED in any channel!
+    apiKey:
+      type: httpApiKey
+      name: X-API-Key
+      in: header
+      description: API key (not enforced)
+
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Bearer token (not enforced)

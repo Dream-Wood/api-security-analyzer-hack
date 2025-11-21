@@ -205,3 +205,42 @@
   background-color: #fee2e2;
   border-radius: var(--border-radius);
 }
+
+/* Input with status indicator (for ping status) */
+.input-with-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.input-with-status input {
+  flex: 1;
+}
+
+.ping-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.ping-status.loading {
+  background-color: #f3f4f6;
+  color: #6b7280;
+}
+
+.ping-status.available {
+  background-color: #d1fae5;
+  color: #065f46;
+  border: 1px solid #10b981;
+}
+
+.ping-status.unavailable {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #ef4444;
+}

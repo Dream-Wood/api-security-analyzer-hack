@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../services/api';
 import { VulnerabilityChart } from './VulnerabilityChart';
 import './ResultsPanel.css';
@@ -45,7 +46,8 @@ const sortBySeverity = <T extends { severity?: string }>(items: T[]): T[] => {
 };
 
 export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sessionId }) => {
-  const [activeTab, setActiveTab] = useState<'summary' | 'static' | 'active' | 'contract'>('summary');
+  const { t } = useTranslation();
+  const [activeTab, setActiveTab] = useState<'summary' | 'static' | 'active' | 'contract' | 'discovery'>('summary');
   const [expandedEndpoints, setExpandedEndpoints] = useState<Set<string>>(new Set());
   const [showFormatMenu, setShowFormatMenu] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -71,7 +73,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
       setShowFormatMenu(false);
     } catch (error) {
       console.error('Failed to download report:', error);
-      alert('Failed to download report. Please try again.');
+      alert(t('results.downloadReport') + '. ' + t('configuration.uploadErrorRetry'));
     } finally {
       setIsDownloading(false);
     }
@@ -84,12 +86,12 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
           {status === 'running' ? (
             <>
               <div className="spinner"></div>
-              <p>Analysis in progress...</p>
+              <p>{t('results.analysisInProgress')}</p>
             </>
           ) : status === 'pending' ? (
-            <p>Waiting to start analysis...</p>
+            <p>{t('results.waitingToStart')}</p>
           ) : (
-            <p>No results yet. Start an analysis to see results.</p>
+            <p>{t('results.noResults')}</p>
           )}
         </div>
       </div>
@@ -104,12 +106,14 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
     const hasStatic = report.staticResult && !report.staticResult.errorMessage;
     const hasActive = report.activeResult && !report.activeResult.errorMessage;
     const hasContract = report.contractResult && !report.contractResult.errorMessage;
+    const hasDiscovery = report.discoveryResult && !report.discoveryResult.errorMessage;
 
     // Get statistics
     const staticFindings = hasStatic ? (report.staticResult?.findings?.length || 0) : 0;
     const activeVulnerabilities = hasActive ? (report.activeResult?.report?.totalVulnerabilities || report.activeResult?.report?.allVulnerabilities?.length || 0) : 0;
     const contractEndpoints = hasContract ? (report.contractResult?.report?.statistics?.totalEndpoints || report.contractResult?.report?.totalEndpoints || 0) : 0;
     const contractDivergences = hasContract ? (report.contractResult?.report?.statistics?.totalDivergences || report.contractResult?.report?.totalDivergences || 0) : 0;
+    const discoveryEndpoints = hasDiscovery ? (report.discoveryResult?.report?.totalCount || 0) : 0;
 
     // Get vulnerabilities for endpoint grouping
     const vulnerabilities = hasActive ? (report.activeResult?.report?.allVulnerabilities || []) : [];
@@ -144,26 +148,26 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
     return (
       <div className="results-summary">
         <div className="summary-card">
-          <h3>Analysis Summary</h3>
+          <h3>{t('results.analysisSummary')}</h3>
           <div className="summary-grid">
             <div className="summary-item">
-              <span className="summary-label">Specification</span>
+              <span className="summary-label">{t('results.specification')}</span>
               <span className="summary-value" title={report.specLocation}>
                 {getSpecDisplayName(report.specLocation, report.specTitle)}
               </span>
             </div>
             <div className="summary-item">
-              <span className="summary-label">Mode</span>
+              <span className="summary-label">{t('results.mode')}</span>
               <span className="summary-value">{report.mode}</span>
             </div>
             <div className="summary-item">
-              <span className="summary-label">Total Issues</span>
+              <span className="summary-label">{t('results.totalIssues')}</span>
               <span className={`summary-value ${totalIssues > 0 ? 'issues' : 'success'}`}>
                 {totalIssues}
               </span>
             </div>
             <div className="summary-item">
-              <span className="summary-label">Duration</span>
+              <span className="summary-label">{t('results.duration')}</span>
               <span className="summary-value">
                 {calculateDuration(report.startTime, report.endTime)}
               </span>
@@ -172,16 +176,16 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
         </div>
 
         {/* Analysis Results Summary */}
-        {(hasStatic || hasActive || hasContract) && (
+        {(hasStatic || hasActive || hasContract || hasDiscovery) && (
           <div className="summary-card analysis-results-card">
-            <h4>Analysis Results</h4>
+            <h4>{t('results.analysisResults')}</h4>
             <div className="analysis-results-grid">
               {hasStatic && (
                 <div className="analysis-result-item">
                   <div className="result-icon">📄</div>
                   <div className="result-content">
-                    <div className="result-label">Static Analysis</div>
-                    <div className="result-value">{staticFindings} findings</div>
+                    <div className="result-label">{t('results.staticAnalysis')}</div>
+                    <div className="result-value">{staticFindings} {staticFindings !== 1 ? t('results.findings') : t('results.finding')}</div>
                   </div>
                 </div>
               )}
@@ -189,8 +193,8 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
                 <div className="analysis-result-item">
                   <div className="result-icon">🔍</div>
                   <div className="result-content">
-                    <div className="result-label">Active Analysis</div>
-                    <div className="result-value">{activeVulnerabilities} vulnerabilities</div>
+                    <div className="result-label">{t('results.activeAnalysis')}</div>
+                    <div className="result-value">{activeVulnerabilities} {t('results.vulnerabilities').toLowerCase()}</div>
                   </div>
                 </div>
               )}
@@ -198,8 +202,17 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
                 <div className="analysis-result-item">
                   <div className="result-icon">✓</div>
                   <div className="result-content">
-                    <div className="result-label">Contract Validation</div>
-                    <div className="result-value">{contractEndpoints} endpoints • {contractDivergences} divergences</div>
+                    <div className="result-label">{t('results.contractValidation')}</div>
+                    <div className="result-value">{contractEndpoints} {t('results.endpoints')} • {contractDivergences} {t('results.divergences')}</div>
+                  </div>
+                </div>
+              )}
+              {hasDiscovery && (
+                <div className="analysis-result-item">
+                  <div className="result-icon">🗺️</div>
+                  <div className="result-content">
+                    <div className="result-label">{t('results.endpointDiscovery')}</div>
+                    <div className="result-value">{discoveryEndpoints} {discoveryEndpoints !== 1 ? t('results.undocumentedEndpoints') : t('results.undocumentedEndpoint')}</div>
                   </div>
                 </div>
               )}
@@ -211,14 +224,14 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
         {vulnerabilities.length > 0 && (
           <VulnerabilityChart
             vulnerabilities={vulnerabilities}
-            title="Vulnerability Types Distribution"
+            title={t('results.vulnTypesDistribution')}
           />
         )}
 
         {/* Endpoints with Vulnerabilities */}
         {endpointGroups.length > 0 ? (
           <div className="summary-card">
-            <h3>Endpoints with Vulnerabilities</h3>
+            <h3>{t('results.endpointsWithVulnerabilities')}</h3>
             <div className="endpoints-vulnerability-list">
               {endpointGroups.map((endpointGroup, index) => {
                 const endpointKey = `summary-${endpointGroup.method}-${endpointGroup.path}`;
@@ -241,25 +254,25 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
                         </code>
                       </div>
                       <div className="endpoint-vulnerability-badges">
-                        <span className="total-badge">{totalVulns} issue{totalVulns !== 1 ? 's' : ''}</span>
+                        <span className="total-badge">{totalVulns} {totalVulns !== 1 ? t('results.issues') : t('results.issue')}</span>
                         {endpointGroup.severityCounts.CRITICAL > 0 && (
                           <span className="severity-count critical">
-                            {endpointGroup.severityCounts.CRITICAL} Critical
+                            {endpointGroup.severityCounts.CRITICAL} {t('results.critical')}
                           </span>
                         )}
                         {endpointGroup.severityCounts.HIGH > 0 && (
                           <span className="severity-count high">
-                            {endpointGroup.severityCounts.HIGH} High
+                            {endpointGroup.severityCounts.HIGH} {t('results.high')}
                           </span>
                         )}
                         {endpointGroup.severityCounts.MEDIUM > 0 && (
                           <span className="severity-count medium">
-                            {endpointGroup.severityCounts.MEDIUM} Medium
+                            {endpointGroup.severityCounts.MEDIUM} {t('results.medium')}
                           </span>
                         )}
                         {endpointGroup.severityCounts.LOW > 0 && (
                           <span className="severity-count low">
-                            {endpointGroup.severityCounts.LOW} Low
+                            {endpointGroup.severityCounts.LOW} {t('results.low')}
                           </span>
                         )}
                       </div>
@@ -280,21 +293,21 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
 
                             {vuln.description && (
                               <div className="vulnerability-section">
-                                <strong>Description:</strong>
+                                <strong>{t('results.description')}:</strong>
                                 <p>{vuln.description}</p>
                               </div>
                             )}
 
                             {vuln.reproductionSteps && (
                               <div className="vulnerability-section">
-                                <strong>Reproduction Steps:</strong>
+                                <strong>{t('results.reproductionSteps')}:</strong>
                                 <pre className="reproduction-steps">{vuln.reproductionSteps}</pre>
                               </div>
                             )}
 
                             {vuln.recommendations && vuln.recommendations.length > 0 && (
                               <div className="vulnerability-section">
-                                <strong>Remediation:</strong>
+                                <strong>{t('results.remediation')}:</strong>
                                 <ul className="remediation-list">
                                   {vuln.recommendations.map((rec: string, recIndex: number) => (
                                     <li key={recIndex}>{rec}</li>
@@ -305,7 +318,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
 
                             {vuln.evidence && Object.keys(vuln.evidence).length > 0 && (
                               <div className="vulnerability-section">
-                                <strong>Evidence:</strong>
+                                <strong>{t('results.evidence')}:</strong>
                                 <div className="evidence-data">
                                   {Object.entries(vuln.evidence).map(([key, value]) => (
                                     <div key={key} className="evidence-item">
@@ -327,13 +340,13 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
           </div>
         ) : hasActive ? (
           <div className="summary-card" style={{backgroundColor: '#fef2f2', border: '1px solid #fca5a5'}}>
-            <h4 style={{color: '#dc2626'}}>⚠️ No Endpoint Data Available</h4>
-            <p>Active analysis completed but no vulnerability endpoint data found.</p>
-            <p>Possible reasons:</p>
+            <h4 style={{color: '#dc2626'}}>⚠️ {t('results.noEndpointData')}</h4>
+            <p>{t('results.noEndpointDataDescription')}</p>
+            <p>{t('results.possibleReasons')}</p>
             <ul>
-              <li>No vulnerabilities were detected</li>
-              <li>Vulnerability data structure is different than expected</li>
-              <li>Check console and Debug Information above for details</li>
+              <li>{t('results.reasonNoVulns')}</li>
+              <li>{t('results.reasonDataStructure')}</li>
+              <li>{t('results.reasonCheckConsole')}</li>
             </ul>
           </div>
         ) : null}
@@ -385,7 +398,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
     const hasStatic = report.staticResult && !report.staticResult.errorMessage;
 
     if (!hasStatic) {
-      return <div className="results-empty">Static analysis not performed</div>;
+      return <div className="results-empty">{t('results.staticNotPerformed')}</div>;
     }
 
     if (report.staticResult?.errorMessage) {
@@ -397,18 +410,18 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
 
     return (
       <div className="results-details">
-        <h3>Static Analysis - Findings by Endpoint</h3>
+        <h3>{t('results.staticByEndpoint')}</h3>
         {findings.length === 0 ? (
-          <p className="success-message">No issues found!</p>
+          <p className="success-message">{t('results.noIssuesFound')}</p>
         ) : (
           <>
             <div className="vulnerability-summary">
               <div className="summary-stat">
-                <span className="stat-label">Total Findings</span>
+                <span className="stat-label">{t('results.totalFindings')}</span>
                 <span className="stat-value">{findings.length}</span>
               </div>
               <div className="summary-stat">
-                <span className="stat-label">Affected Endpoints</span>
+                <span className="stat-label">{t('results.affectedEndpoints')}</span>
                 <span className="stat-value">{endpointGroups.length}</span>
               </div>
             </div>
@@ -437,25 +450,25 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
                         </code>
                       </div>
                       <div className="endpoint-vulnerability-badges">
-                        <span className="total-badge">{totalFindings} finding{totalFindings !== 1 ? 's' : ''}</span>
+                        <span className="total-badge">{totalFindings} {totalFindings !== 1 ? t('results.findings') : t('results.finding')}</span>
                         {endpointGroup.severityCounts.CRITICAL > 0 && (
                           <span className="severity-count critical">
-                            {endpointGroup.severityCounts.CRITICAL} Critical
+                            {endpointGroup.severityCounts.CRITICAL} {t('results.critical')}
                           </span>
                         )}
                         {endpointGroup.severityCounts.HIGH > 0 && (
                           <span className="severity-count high">
-                            {endpointGroup.severityCounts.HIGH} High
+                            {endpointGroup.severityCounts.HIGH} {t('results.high')}
                           </span>
                         )}
                         {endpointGroup.severityCounts.MEDIUM > 0 && (
                           <span className="severity-count medium">
-                            {endpointGroup.severityCounts.MEDIUM} Medium
+                            {endpointGroup.severityCounts.MEDIUM} {t('results.medium')}
                           </span>
                         )}
                         {endpointGroup.severityCounts.LOW > 0 && (
                           <span className="severity-count low">
-                            {endpointGroup.severityCounts.LOW} Low
+                            {endpointGroup.severityCounts.LOW} {t('results.low')}
                           </span>
                         )}
                       </div>
@@ -476,21 +489,21 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
 
                             {finding.location && finding.location !== endpointGroup.path && (
                               <div className="vulnerability-section">
-                                <strong>Location:</strong>
+                                <strong>{t('results.location')}:</strong>
                                 <p><code>{finding.location}</code></p>
                               </div>
                             )}
 
                             {finding.recommendation && (
                               <div className="vulnerability-section">
-                                <strong>Recommendation:</strong>
+                                <strong>{t('results.recommendation')}:</strong>
                                 <p>{finding.recommendation}</p>
                               </div>
                             )}
 
                             {finding.metadata && Object.keys(finding.metadata).length > 0 && (
                               <div className="vulnerability-section">
-                                <strong>Additional Information:</strong>
+                                <strong>{t('results.additionalInfo')}:</strong>
                                 <div className="evidence-data">
                                   {Object.entries(finding.metadata).map(([key, value]) => (
                                     <div key={key} className="evidence-item">
@@ -559,7 +572,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
     const hasActive = report.activeResult && !report.activeResult.errorMessage;
 
     if (!hasActive) {
-      return <div className="results-empty">Active analysis not performed</div>;
+      return <div className="results-empty">{t('results.activeNotPerformed')}</div>;
     }
 
     if (report.activeResult?.errorMessage) {
@@ -571,18 +584,18 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
 
     return (
       <div className="results-details">
-        <h3>Active Analysis - Vulnerabilities by Endpoint</h3>
+        <h3>{t('results.activeByEndpoint')}</h3>
         {vulnerabilities.length === 0 ? (
-          <p className="success-message">No vulnerabilities found!</p>
+          <p className="success-message">{t('results.noVulnerabilitiesFound')}</p>
         ) : (
           <>
             <div className="vulnerability-summary">
               <div className="summary-stat">
-                <span className="stat-label">Total Endpoints</span>
+                <span className="stat-label">{t('results.totalEndpoints')}</span>
                 <span className="stat-value">{endpointGroups.length}</span>
               </div>
               <div className="summary-stat">
-                <span className="stat-label">Total Vulnerabilities</span>
+                <span className="stat-label">{t('results.totalVulnerabilities')}</span>
                 <span className="stat-value">{vulnerabilities.length}</span>
               </div>
             </div>
@@ -591,7 +604,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
             <div style={{ marginBottom: 'var(--spacing-lg)' }}>
               <VulnerabilityChart
                 vulnerabilities={vulnerabilities}
-                title="Vulnerability Types Distribution"
+                title={t('results.vulnTypesDistribution')}
               />
             </div>
 
@@ -617,25 +630,25 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
                         </code>
                       </div>
                       <div className="endpoint-vulnerability-badges">
-                        <span className="total-badge">{totalVulns} issue{totalVulns !== 1 ? 's' : ''}</span>
+                        <span className="total-badge">{totalVulns} {totalVulns !== 1 ? t('results.issues') : t('results.issue')}</span>
                         {endpointGroup.severityCounts.CRITICAL > 0 && (
                           <span className="severity-count critical">
-                            {endpointGroup.severityCounts.CRITICAL} Critical
+                            {endpointGroup.severityCounts.CRITICAL} {t('results.critical')}
                           </span>
                         )}
                         {endpointGroup.severityCounts.HIGH > 0 && (
                           <span className="severity-count high">
-                            {endpointGroup.severityCounts.HIGH} High
+                            {endpointGroup.severityCounts.HIGH} {t('results.high')}
                           </span>
                         )}
                         {endpointGroup.severityCounts.MEDIUM > 0 && (
                           <span className="severity-count medium">
-                            {endpointGroup.severityCounts.MEDIUM} Medium
+                            {endpointGroup.severityCounts.MEDIUM} {t('results.medium')}
                           </span>
                         )}
                         {endpointGroup.severityCounts.LOW > 0 && (
                           <span className="severity-count low">
-                            {endpointGroup.severityCounts.LOW} Low
+                            {endpointGroup.severityCounts.LOW} {t('results.low')}
                           </span>
                         )}
                       </div>
@@ -656,21 +669,21 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
 
                             {vuln.description && (
                               <div className="vulnerability-section">
-                                <strong>Description:</strong>
+                                <strong>{t('results.description')}:</strong>
                                 <p>{vuln.description}</p>
                               </div>
                             )}
 
                             {vuln.reproductionSteps && (
                               <div className="vulnerability-section">
-                                <strong>Reproduction Steps:</strong>
+                                <strong>{t('results.reproductionSteps')}:</strong>
                                 <pre className="reproduction-steps">{vuln.reproductionSteps}</pre>
                               </div>
                             )}
 
                             {vuln.recommendations && vuln.recommendations.length > 0 && (
                               <div className="vulnerability-section">
-                                <strong>Remediation:</strong>
+                                <strong>{t('results.remediation')}:</strong>
                                 <ul className="remediation-list">
                                   {vuln.recommendations.map((rec: string, recIndex: number) => (
                                     <li key={recIndex}>{rec}</li>
@@ -681,7 +694,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
 
                             {vuln.evidence && Object.keys(vuln.evidence).length > 0 && (
                               <div className="vulnerability-section">
-                                <strong>Evidence:</strong>
+                                <strong>{t('results.evidence')}:</strong>
                                 <div className="evidence-data">
                                   {Object.entries(vuln.evidence).map(([key, value]) => (
                                     <div key={key} className="evidence-item">
@@ -749,7 +762,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
     const hasContract = report.contractResult && !report.contractResult.errorMessage;
 
     if (!hasContract) {
-      return <div className="results-empty">Contract validation not performed</div>;
+      return <div className="results-empty">{t('results.contractNotPerformed')}</div>;
     }
 
     if (report.contractResult?.errorMessage) {
@@ -777,7 +790,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
 
     const stats = contractReport?.statistics || {};
     const totalEndpoints = stats.totalEndpoints || contractReport?.totalEndpoints || 0;
-    const totalDivergences = stats.totalDivergences || contractReport?.totalDivergences || 0;
+    const totalDivergencesCount = stats.totalDivergences || contractReport?.totalDivergences || 0;
     const criticalDivergences = stats.criticalDivergences || contractReport?.criticalDivergences || 0;
     const highDivergences = stats.highDivergences || contractReport?.highDivergences || 0;
     const passed = stats.passed || 0;
@@ -787,38 +800,38 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
 
     return (
       <div className="results-details">
-        <h3>Contract Validation - Divergences by Endpoint</h3>
+        <h3>{t('results.contractByEndpoint')}</h3>
 
         <div className="contract-summary">
           <div className="contract-stat">
             <span className="stat-value">{totalEndpoints}</span>
-            <span className="stat-label">Total Endpoints</span>
+            <span className="stat-label">{t('results.totalEndpoints')}</span>
           </div>
           <div className="contract-stat">
-            <span className="stat-value">{totalDivergences}</span>
-            <span className="stat-label">Total Divergences</span>
+            <span className="stat-value">{totalDivergencesCount}</span>
+            <span className="stat-label">{t('results.totalDivergences')}</span>
           </div>
           <div className="contract-stat error">
             <span className="stat-value">{criticalDivergences}</span>
-            <span className="stat-label">Critical</span>
+            <span className="stat-label">{t('results.critical')}</span>
           </div>
           <div className="contract-stat error">
             <span className="stat-value">{highDivergences}</span>
-            <span className="stat-label">High</span>
+            <span className="stat-label">{t('results.high')}</span>
           </div>
           <div className="contract-stat success">
             <span className="stat-value">{passed}</span>
-            <span className="stat-label">Passed</span>
+            <span className="stat-label">{t('results.passed')}</span>
           </div>
           <div className="contract-stat error">
             <span className="stat-value">{failed}</span>
-            <span className="stat-label">Failed</span>
+            <span className="stat-label">{t('results.failed')}</span>
           </div>
         </div>
 
 
         {allDivergences.length === 0 ? (
-          <p className="success-message">✓ No divergences found - All endpoints match specification!</p>
+          <p className="success-message">✓ {t('results.noDivergencesFound')}</p>
         ) : (
           <div className="endpoints-vulnerability-list">
             {endpointGroups.map((endpointGroup, index) => {
@@ -845,25 +858,25 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
                       </code>
                     </div>
                     <div className="endpoint-vulnerability-badges">
-                      <span className="total-badge">{totalDivergences} divergence{totalDivergences !== 1 ? 's' : ''}</span>
+                      <span className="total-badge">{totalDivergences} {totalDivergences !== 1 ? t('results.divergences') : t('results.divergence')}</span>
                       {endpointGroup.severityCounts.CRITICAL > 0 && (
                         <span className="severity-count critical">
-                          {endpointGroup.severityCounts.CRITICAL} Critical
+                          {endpointGroup.severityCounts.CRITICAL} {t('results.critical')}
                         </span>
                       )}
                       {endpointGroup.severityCounts.HIGH > 0 && (
                         <span className="severity-count high">
-                          {endpointGroup.severityCounts.HIGH} High
+                          {endpointGroup.severityCounts.HIGH} {t('results.high')}
                         </span>
                       )}
                       {endpointGroup.severityCounts.MEDIUM > 0 && (
                         <span className="severity-count medium">
-                          {endpointGroup.severityCounts.MEDIUM} Medium
+                          {endpointGroup.severityCounts.MEDIUM} {t('results.medium')}
                         </span>
                       )}
                       {endpointGroup.severityCounts.LOW > 0 && (
                         <span className="severity-count low">
-                          {endpointGroup.severityCounts.LOW} Low
+                          {endpointGroup.severityCounts.LOW} {t('results.low')}
                         </span>
                       )}
                     </div>
@@ -884,28 +897,28 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
 
                           {divergence.field && (
                             <div className="vulnerability-section">
-                              <strong>Field:</strong>
+                              <strong>{t('results.field')}:</strong>
                               <p><code>{divergence.field}</code></p>
                             </div>
                           )}
 
                           {divergence.expectedValue && (
                             <div className="vulnerability-section">
-                              <strong>Expected Value:</strong>
+                              <strong>{t('results.expectedValue')}:</strong>
                               <p><code>{String(divergence.expectedValue)}</code></p>
                             </div>
                           )}
 
                           {divergence.actualValue !== undefined && divergence.actualValue !== null && (
                             <div className="vulnerability-section">
-                              <strong>Actual Value:</strong>
+                              <strong>{t('results.actualValue')}:</strong>
                               <p><code>{String(divergence.actualValue)}</code></p>
                             </div>
                           )}
 
                           {divergence.metadata && Object.keys(divergence.metadata).length > 0 && (
                             <div className="vulnerability-section">
-                              <strong>Additional Information:</strong>
+                              <strong>{t('results.additionalInfo')}:</strong>
                               <div className="evidence-data">
                                 {Object.entries(divergence.metadata).map(([key, value]) => (
                                   <div key={key} className="evidence-item">
@@ -918,6 +931,191 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
                           )}
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderDiscovery = () => {
+    const hasDiscovery = report.discoveryResult && !report.discoveryResult.errorMessage;
+
+    if (!hasDiscovery) {
+      return <div className="results-empty">{t('results.discoveryNotPerformed')}</div>;
+    }
+
+    if (report.discoveryResult?.errorMessage) {
+      return <div className="results-error">{report.discoveryResult.errorMessage}</div>;
+    }
+
+    const discoveryReport = report.discoveryResult?.report;
+    const results = discoveryReport?.results || [];
+    const totalFound = discoveryReport?.totalCount || 0;
+    const config = discoveryReport?.config || {};
+
+    // Group results by severity
+    const groupBySeverity = (results: any[]) => {
+      const groups: Record<string, any[]> = {
+        CRITICAL: [],
+        HIGH: [],
+        MEDIUM: [],
+        LOW: [],
+        INFO: []
+      };
+      results.forEach((result: any) => {
+        const severity = result.severity || 'INFO';
+        if (!groups[severity]) groups[severity] = [];
+        groups[severity].push(result);
+      });
+      return groups;
+    };
+
+    const severityGroups = groupBySeverity(results);
+    const criticalCount = severityGroups.CRITICAL.length;
+    const highCount = severityGroups.HIGH.length;
+    const mediumCount = severityGroups.MEDIUM.length;
+
+    return (
+      <div className="results-details">
+        <h3>{t('results.discoveryResults')}</h3>
+
+        <div className="discovery-summary">
+          <div className="discovery-stat">
+            <span className="stat-value">{totalFound}</span>
+            <span className="stat-label">{t('results.undocumentedEndpointsFound')}</span>
+          </div>
+          <div className="discovery-stat">
+            <span className="stat-value">{config.strategy || 'N/A'}</span>
+            <span className="stat-label">{t('results.strategyUsed')}</span>
+          </div>
+          <div className="discovery-stat error">
+            <span className="stat-value">{criticalCount}</span>
+            <span className="stat-label">{t('results.critical')}</span>
+          </div>
+          <div className="discovery-stat error">
+            <span className="stat-value">{highCount}</span>
+            <span className="stat-label">{t('results.high')}</span>
+          </div>
+          <div className="discovery-stat warning">
+            <span className="stat-value">{mediumCount}</span>
+            <span className="stat-label">{t('results.medium')}</span>
+          </div>
+        </div>
+
+        {results.length === 0 ? (
+          <p className="success-message">✓ {t('results.noUndocumentedEndpointsFound')}</p>
+        ) : (
+          <div className="endpoints-vulnerability-list">
+            <p className="info-message">
+              ⚠️ {t('results.undocumentedEndpointsWarning')}
+              <ul style={{ marginTop: '8px', marginLeft: '20px' }}>
+                <li>{t('results.shadowEndpoints')}</li>
+                <li>{t('results.legacyEndpoints')}</li>
+                <li>{t('results.devEndpoints')}</li>
+                <li>{t('results.adminInterfaces')}</li>
+              </ul>
+            </p>
+
+            {results.map((result: any, index: number) => {
+              const endpoint = result.endpoint || {};
+              const endpointKey = `discovery-${endpoint.method}-${endpoint.path}`;
+              const isExpanded = expandedEndpoints.has(endpointKey);
+              const severity = result.severity || 'INFO';
+              const metadata = result.metadata || {};
+
+              return (
+                <div key={index} className={`endpoint-vulnerability-item severity-${severity.toLowerCase()}`}>
+                  <div
+                    className="endpoint-vulnerability-header"
+                    onClick={() => toggleEndpoint(endpointKey)}
+                  >
+                    <div className="endpoint-info">
+                      <span className="expand-icon">{isExpanded ? '▼' : '▶'}</span>
+                      <code className="endpoint-code">
+                        <span className={`method-badge ${endpoint.method?.toLowerCase() || 'unknown'}`}>
+                          {endpoint.method || 'N/A'}
+                        </span>
+                        {endpoint.path || 'N/A'}
+                      </code>
+                    </div>
+                    <div className="endpoint-vulnerability-badges">
+                      <span className={`severity-badge ${severity.toLowerCase()}`}>
+                        {severity}
+                      </span>
+                      {result.discoveryMethod && (
+                        <span className="discovery-method-badge">
+                          {result.discoveryMethod}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="endpoint-vulnerabilities-details">
+                      <div className="vulnerability-detail-item">
+                        <div className="vulnerability-section">
+                          <strong>Status Code:</strong>
+                          <p>{result.statusCode || 'N/A'}</p>
+                        </div>
+
+                        <div className="vulnerability-section">
+                          <strong>Response Time:</strong>
+                          <p>{result.responseTimeMs ? `${result.responseTimeMs}ms` : 'N/A'}</p>
+                        </div>
+
+                        <div className="vulnerability-section">
+                          <strong>Discovery Method:</strong>
+                          <p>{result.discoveryMethod || 'N/A'}</p>
+                        </div>
+
+                        <div className="vulnerability-section">
+                          <strong>Reason:</strong>
+                          <p>{result.reason || 'N/A'}</p>
+                        </div>
+
+                        {metadata.confidence && (
+                          <div className="vulnerability-section">
+                            <strong>Confidence:</strong>
+                            <p>{(metadata.confidence * 100).toFixed(0)}%</p>
+                          </div>
+                        )}
+
+                        {metadata.depth && (
+                          <div className="vulnerability-section">
+                            <strong>Depth:</strong>
+                            <p>Level {metadata.depth}</p>
+                          </div>
+                        )}
+
+                        {result.responseBody && (
+                          <div className="vulnerability-section">
+                            <strong>Response Body (Preview):</strong>
+                            <pre className="evidence-data" style={{ maxHeight: '200px', overflow: 'auto' }}>
+                              {result.responseBody.substring(0, 500)}
+                              {result.responseBody.length > 500 && '...'}
+                            </pre>
+                          </div>
+                        )}
+
+                        {result.responseHeaders && Object.keys(result.responseHeaders).length > 0 && (
+                          <div className="vulnerability-section">
+                            <strong>Response Headers:</strong>
+                            <div className="evidence-data">
+                              {Object.entries(result.responseHeaders).slice(0, 10).map(([key, value]) => (
+                                <div key={key} className="evidence-item">
+                                  <span className="evidence-key">{key}:</span>
+                                  <span className="evidence-value">{String(value)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -954,7 +1152,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
                 disabled={isDownloading}
               >
                 <span className="download-icon">📥</span>
-                <span>{isDownloading ? 'Downloading...' : 'Download Report'}</span>
+                <span>{isDownloading ? t('results.downloading') : t('results.downloadReport')}</span>
                 {!isDownloading && <span className="download-arrow">▼</span>}
               </button>
               {showFormatMenu && !isDownloading && (
@@ -998,14 +1196,14 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
           className={activeTab === 'summary' ? 'active' : ''}
           onClick={() => setActiveTab('summary')}
         >
-          Summary
+          {t('results.summary')}
         </button>
         {report.staticResult && (
           <button
             className={activeTab === 'static' ? 'active' : ''}
             onClick={() => setActiveTab('static')}
           >
-            Static
+            {t('results.staticFindings')}
           </button>
         )}
         {report.activeResult && (
@@ -1013,7 +1211,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
             className={activeTab === 'active' ? 'active' : ''}
             onClick={() => setActiveTab('active')}
           >
-            Active
+            {t('results.activeFindings')}
           </button>
         )}
         {report.contractResult && (
@@ -1021,7 +1219,15 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
             className={activeTab === 'contract' ? 'active' : ''}
             onClick={() => setActiveTab('contract')}
           >
-            Contract
+            {t('results.contractFindings')}
+          </button>
+        )}
+        {report.discoveryResult && (
+          <button
+            className={activeTab === 'discovery' ? 'active' : ''}
+            onClick={() => setActiveTab('discovery')}
+          >
+            {t('results.discoveryFindings')}
           </button>
         )}
       </div>
@@ -1031,6 +1237,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ report, status, sess
         {activeTab === 'static' && renderStatic()}
         {activeTab === 'active' && renderActive()}
         {activeTab === 'contract' && renderContract()}
+        {activeTab === 'discovery' && renderDiscovery()}
       </div>
     </div>
   );
