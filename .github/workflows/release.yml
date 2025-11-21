@@ -62,20 +62,10 @@ jobs:
           cp cli/target/api-security-analyzer.jar "$RELEASE_DIR/api-security-analyzer-cli-$VERSION.jar"
           cp webui/target/api-security-analyzer-webui.jar "$RELEASE_DIR/api-security-analyzer-webui-$VERSION.jar"
 
-          # Copy documentation
-          cp README.md "$RELEASE_DIR/"
-          cp LICENSE.txt "$RELEASE_DIR/"
-          cp CHANGELOG.md "$RELEASE_DIR/"
-
-          # Copy examples if exist
-          if [ -d "test-specs" ]; then
-            mkdir -p "$RELEASE_DIR/examples"
-            cp -r test-specs/* "$RELEASE_DIR/examples/"
-          fi
 
           # Copy scanner plugins
           mkdir -p "$RELEASE_DIR/plugins"
-          cp plugins/scanner-*.jar "$RELEASE_DIR/plugins/" 2>/dev/null || echo "No plugin JARs found"
+          cp plugins/*.jar "$RELEASE_DIR/plugins/" 2>/dev/null || echo "No plugin JARs found"
 
           # Create USAGE.txt
           cat > "$RELEASE_DIR/USAGE.txt" << EOF
